@@ -5,7 +5,11 @@ A simple terminal UI for SQL Server, PostgreSQL, MySQL, and SQLite, for those wh
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-![Demo](demo-query.gif)
+### Multi-database Support
+![Database Providers](demo-providers.gif)
+
+### Query History
+![Query History](demo-history.gif)
 
 
 ## Features
