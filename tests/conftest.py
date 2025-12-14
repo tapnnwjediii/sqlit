@@ -637,6 +637,570 @@ def mysql_connection(mysql_db: str) -> str:
 
 
 # =============================================================================
+# Oracle Fixtures
+# =============================================================================
+
+# Oracle connection settings for Docker
+ORACLE_HOST = os.environ.get("ORACLE_HOST", "localhost")
+ORACLE_PORT = int(os.environ.get("ORACLE_PORT", "1521"))
+ORACLE_USER = os.environ.get("ORACLE_USER", "testuser")
+ORACLE_PASSWORD = os.environ.get("ORACLE_PASSWORD", "TestPassword123!")
+ORACLE_SERVICE = os.environ.get("ORACLE_SERVICE", "FREEPDB1")
+
+
+def oracle_available() -> bool:
+    """Check if Oracle is available."""
+    return is_port_open(ORACLE_HOST, ORACLE_PORT)
+
+
+@pytest.fixture(scope="session")
+def oracle_server_ready() -> bool:
+    """Check if Oracle is ready and return True/False."""
+    if not oracle_available():
+        return False
+
+    # Wait a bit for Oracle to be fully ready
+    time.sleep(2)
+    return True
+
+
+@pytest.fixture(scope="function")
+def oracle_db(oracle_server_ready: bool) -> str:
+    """Set up Oracle test database."""
+    if not oracle_server_ready:
+        pytest.skip("Oracle is not available")
+
+    try:
+        import oracledb
+    except ImportError:
+        pytest.skip("oracledb is not installed")
+
+    try:
+        dsn = f"{ORACLE_HOST}:{ORACLE_PORT}/{ORACLE_SERVICE}"
+        conn = oracledb.connect(
+            user=ORACLE_USER,
+            password=ORACLE_PASSWORD,
+            dsn=dsn,
+        )
+        cursor = conn.cursor()
+
+        # Drop tables if they exist (Oracle doesn't have IF EXISTS, use exception handling)
+        for table in ["test_users", "test_products"]:
+            try:
+                cursor.execute(f"DROP TABLE {table} CASCADE CONSTRAINTS")
+            except oracledb.DatabaseError:
+                pass  # Table doesn't exist
+
+        # Drop view if exists
+        try:
+            cursor.execute("DROP VIEW test_user_emails")
+        except oracledb.DatabaseError:
+            pass
+
+        # Create test tables
+        cursor.execute("""
+            CREATE TABLE test_users (
+                id NUMBER PRIMARY KEY,
+                name VARCHAR2(100) NOT NULL,
+                email VARCHAR2(100) UNIQUE
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE test_products (
+                id NUMBER PRIMARY KEY,
+                name VARCHAR2(100) NOT NULL,
+                price NUMBER(10,2) NOT NULL,
+                stock NUMBER DEFAULT 0
+            )
+        """)
+
+        # Create test view
+        cursor.execute("""
+            CREATE VIEW test_user_emails AS
+            SELECT id, name, email FROM test_users WHERE email IS NOT NULL
+        """)
+
+        # Insert test data
+        cursor.execute("""
+            INSERT INTO test_users (id, name, email) VALUES (1, 'Alice', 'alice@example.com')
+        """)
+        cursor.execute("""
+            INSERT INTO test_users (id, name, email) VALUES (2, 'Bob', 'bob@example.com')
+        """)
+        cursor.execute("""
+            INSERT INTO test_users (id, name, email) VALUES (3, 'Charlie', 'charlie@example.com')
+        """)
+
+        cursor.execute("""
+            INSERT INTO test_products (id, name, price, stock) VALUES (1, 'Widget', 9.99, 100)
+        """)
+        cursor.execute("""
+            INSERT INTO test_products (id, name, price, stock) VALUES (2, 'Gadget', 19.99, 50)
+        """)
+        cursor.execute("""
+            INSERT INTO test_products (id, name, price, stock) VALUES (3, 'Gizmo', 29.99, 25)
+        """)
+
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        pytest.skip(f"Failed to setup Oracle database: {e}")
+
+    yield ORACLE_SERVICE
+
+    # Cleanup: drop test tables
+    try:
+        conn = oracledb.connect(
+            user=ORACLE_USER,
+            password=ORACLE_PASSWORD,
+            dsn=dsn,
+        )
+        cursor = conn.cursor()
+        for table in ["test_users", "test_products"]:
+            try:
+                cursor.execute(f"DROP TABLE {table} CASCADE CONSTRAINTS")
+            except oracledb.DatabaseError:
+                pass
+        try:
+            cursor.execute("DROP VIEW test_user_emails")
+        except oracledb.DatabaseError:
+            pass
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+@pytest.fixture(scope="function")
+def oracle_connection(oracle_db: str) -> str:
+    """Create a sqlit CLI connection for Oracle and clean up after test."""
+    connection_name = f"test_oracle_{os.getpid()}"
+
+    # Clean up any existing connection with this name
+    cleanup_connection(connection_name)
+
+    # Create the connection
+    run_cli(
+        "connection", "create",
+        "--name", connection_name,
+        "--db-type", "oracle",
+        "--server", ORACLE_HOST,
+        "--port", str(ORACLE_PORT),
+        "--database", oracle_db,
+        "--username", ORACLE_USER,
+        "--password", ORACLE_PASSWORD,
+    )
+
+    yield connection_name
+
+    # Cleanup
+    cleanup_connection(connection_name)
+
+
+# =============================================================================
+# MariaDB Fixtures
+# =============================================================================
+
+# MariaDB connection settings for Docker
+# Note: Using 127.0.0.1 instead of localhost to force TCP connection (localhost uses Unix socket)
+MARIADB_HOST = os.environ.get("MARIADB_HOST", "127.0.0.1")
+MARIADB_PORT = int(os.environ.get("MARIADB_PORT", "3307"))
+MARIADB_USER = os.environ.get("MARIADB_USER", "root")
+MARIADB_PASSWORD = os.environ.get("MARIADB_PASSWORD", "TestPassword123!")
+MARIADB_DATABASE = os.environ.get("MARIADB_DATABASE", "test_sqlit")
+
+
+def mariadb_available() -> bool:
+    """Check if MariaDB is available."""
+    return is_port_open(MARIADB_HOST, MARIADB_PORT)
+
+
+@pytest.fixture(scope="session")
+def mariadb_server_ready() -> bool:
+    """Check if MariaDB is ready and return True/False."""
+    if not mariadb_available():
+        return False
+
+    # Wait a bit for MariaDB to be fully ready
+    time.sleep(1)
+    return True
+
+
+@pytest.fixture(scope="function")
+def mariadb_db(mariadb_server_ready: bool) -> str:
+    """Set up MariaDB test database."""
+    if not mariadb_server_ready:
+        pytest.skip("MariaDB is not available")
+
+    try:
+        import mariadb
+    except ImportError:
+        pytest.skip("mariadb is not installed")
+
+    try:
+        conn = mariadb.connect(
+            host=MARIADB_HOST,
+            port=MARIADB_PORT,
+            database=MARIADB_DATABASE,
+            user=MARIADB_USER,
+            password=MARIADB_PASSWORD,
+            connect_timeout=10,
+        )
+        cursor = conn.cursor()
+
+        # Drop tables if they exist and recreate
+        cursor.execute("DROP TABLE IF EXISTS test_users")
+        cursor.execute("DROP TABLE IF EXISTS test_products")
+        cursor.execute("DROP VIEW IF EXISTS test_user_emails")
+
+        # Create test tables
+        cursor.execute("""
+            CREATE TABLE test_users (
+                id INT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100) UNIQUE
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE test_products (
+                id INT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                price DECIMAL(10,2) NOT NULL,
+                stock INT DEFAULT 0
+            )
+        """)
+
+        # Create test view
+        cursor.execute("""
+            CREATE VIEW test_user_emails AS
+            SELECT id, name, email FROM test_users WHERE email IS NOT NULL
+        """)
+
+        # Insert test data
+        cursor.execute("""
+            INSERT INTO test_users (id, name, email) VALUES
+            (1, 'Alice', 'alice@example.com'),
+            (2, 'Bob', 'bob@example.com'),
+            (3, 'Charlie', 'charlie@example.com')
+        """)
+
+        cursor.execute("""
+            INSERT INTO test_products (id, name, price, stock) VALUES
+            (1, 'Widget', 9.99, 100),
+            (2, 'Gadget', 19.99, 50),
+            (3, 'Gizmo', 29.99, 25)
+        """)
+
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        pytest.skip(f"Failed to setup MariaDB database: {e}")
+
+    yield MARIADB_DATABASE
+
+    # Cleanup: drop test tables
+    try:
+        conn = mariadb.connect(
+            host=MARIADB_HOST,
+            port=MARIADB_PORT,
+            database=MARIADB_DATABASE,
+            user=MARIADB_USER,
+            password=MARIADB_PASSWORD,
+            connect_timeout=10,
+        )
+        cursor = conn.cursor()
+        cursor.execute("DROP TABLE IF EXISTS test_users")
+        cursor.execute("DROP TABLE IF EXISTS test_products")
+        cursor.execute("DROP VIEW IF EXISTS test_user_emails")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+@pytest.fixture(scope="function")
+def mariadb_connection(mariadb_db: str) -> str:
+    """Create a sqlit CLI connection for MariaDB and clean up after test."""
+    connection_name = f"test_mariadb_{os.getpid()}"
+
+    # Clean up any existing connection with this name
+    cleanup_connection(connection_name)
+
+    # Create the connection
+    run_cli(
+        "connection", "create",
+        "--name", connection_name,
+        "--db-type", "mariadb",
+        "--server", MARIADB_HOST,
+        "--port", str(MARIADB_PORT),
+        "--database", mariadb_db,
+        "--username", MARIADB_USER,
+        "--password", MARIADB_PASSWORD,
+    )
+
+    yield connection_name
+
+    # Cleanup
+    cleanup_connection(connection_name)
+
+
+# =============================================================================
+# DuckDB Fixtures
+# =============================================================================
+
+
+@pytest.fixture(scope="function")
+def duckdb_db_path(tmp_path: Path) -> Path:
+    """Create a temporary DuckDB database file path."""
+    return tmp_path / "test_database.duckdb"
+
+
+@pytest.fixture(scope="function")
+def duckdb_db(duckdb_db_path: Path) -> Path:
+    """Create a temporary DuckDB database with test data."""
+    try:
+        import duckdb
+    except ImportError:
+        pytest.skip("duckdb is not installed")
+
+    conn = duckdb.connect(str(duckdb_db_path))
+
+    # Create test tables
+    conn.execute("""
+        CREATE TABLE test_users (
+            id INTEGER PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            email VARCHAR UNIQUE
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE test_products (
+            id INTEGER PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            price DECIMAL(10,2) NOT NULL,
+            stock INTEGER DEFAULT 0
+        )
+    """)
+
+    # Create test view
+    conn.execute("""
+        CREATE VIEW test_user_emails AS
+        SELECT id, name, email FROM test_users WHERE email IS NOT NULL
+    """)
+
+    # Insert test data
+    conn.execute("""
+        INSERT INTO test_users (id, name, email) VALUES
+        (1, 'Alice', 'alice@example.com'),
+        (2, 'Bob', 'bob@example.com'),
+        (3, 'Charlie', 'charlie@example.com')
+    """)
+
+    conn.execute("""
+        INSERT INTO test_products (id, name, price, stock) VALUES
+        (1, 'Widget', 9.99, 100),
+        (2, 'Gadget', 19.99, 50),
+        (3, 'Gizmo', 29.99, 25)
+    """)
+
+    conn.close()
+
+    return duckdb_db_path
+
+
+@pytest.fixture(scope="function")
+def duckdb_connection(duckdb_db: Path) -> str:
+    """Create a sqlit CLI connection for DuckDB and clean up after test."""
+    connection_name = f"test_duckdb_{os.getpid()}"
+
+    # Clean up any existing connection with this name
+    cleanup_connection(connection_name)
+
+    # Create the connection
+    run_cli(
+        "connection", "create",
+        "--name", connection_name,
+        "--db-type", "duckdb",
+        "--file-path", str(duckdb_db),
+    )
+
+    yield connection_name
+
+    # Cleanup
+    cleanup_connection(connection_name)
+
+
+# =============================================================================
+# CockroachDB Fixtures
+# =============================================================================
+
+# CockroachDB connection settings for Docker
+COCKROACHDB_HOST = os.environ.get("COCKROACHDB_HOST", "localhost")
+COCKROACHDB_PORT = int(os.environ.get("COCKROACHDB_PORT", "26257"))
+COCKROACHDB_USER = os.environ.get("COCKROACHDB_USER", "root")
+COCKROACHDB_PASSWORD = os.environ.get("COCKROACHDB_PASSWORD", "")
+COCKROACHDB_DATABASE = os.environ.get("COCKROACHDB_DATABASE", "test_sqlit")
+
+
+def cockroachdb_available() -> bool:
+    """Check if CockroachDB is available."""
+    return is_port_open(COCKROACHDB_HOST, COCKROACHDB_PORT)
+
+
+@pytest.fixture(scope="session")
+def cockroachdb_server_ready() -> bool:
+    """Check if CockroachDB is ready and return True/False."""
+    if not cockroachdb_available():
+        return False
+
+    # Wait a bit for CockroachDB to be fully ready
+    time.sleep(2)
+    return True
+
+
+@pytest.fixture(scope="function")
+def cockroachdb_db(cockroachdb_server_ready: bool) -> str:
+    """Set up CockroachDB test database."""
+    if not cockroachdb_server_ready:
+        pytest.skip("CockroachDB is not available")
+
+    try:
+        import psycopg2
+    except ImportError:
+        pytest.skip("psycopg2 is not installed")
+
+    try:
+        # Connect to default database first
+        conn = psycopg2.connect(
+            host=COCKROACHDB_HOST,
+            port=COCKROACHDB_PORT,
+            database="defaultdb",
+            user=COCKROACHDB_USER,
+            password=COCKROACHDB_PASSWORD or None,
+            connect_timeout=10,
+        )
+        conn.autocommit = True
+        cursor = conn.cursor()
+
+        # Create test database if it doesn't exist
+        cursor.execute(f"DROP DATABASE IF EXISTS {COCKROACHDB_DATABASE}")
+        cursor.execute(f"CREATE DATABASE {COCKROACHDB_DATABASE}")
+        conn.close()
+
+        # Connect to test database
+        conn = psycopg2.connect(
+            host=COCKROACHDB_HOST,
+            port=COCKROACHDB_PORT,
+            database=COCKROACHDB_DATABASE,
+            user=COCKROACHDB_USER,
+            password=COCKROACHDB_PASSWORD or None,
+            connect_timeout=10,
+        )
+        conn.autocommit = True
+        cursor = conn.cursor()
+
+        # Create test tables
+        cursor.execute("""
+            CREATE TABLE test_users (
+                id INT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100) UNIQUE
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE test_products (
+                id INT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                price DECIMAL(10,2) NOT NULL,
+                stock INT DEFAULT 0
+            )
+        """)
+
+        # Create test view
+        cursor.execute("""
+            CREATE VIEW test_user_emails AS
+            SELECT id, name, email FROM test_users WHERE email IS NOT NULL
+        """)
+
+        # Insert test data
+        cursor.execute("""
+            INSERT INTO test_users (id, name, email) VALUES
+            (1, 'Alice', 'alice@example.com'),
+            (2, 'Bob', 'bob@example.com'),
+            (3, 'Charlie', 'charlie@example.com')
+        """)
+
+        cursor.execute("""
+            INSERT INTO test_products (id, name, price, stock) VALUES
+            (1, 'Widget', 9.99, 100),
+            (2, 'Gadget', 19.99, 50),
+            (3, 'Gizmo', 29.99, 25)
+        """)
+
+        conn.close()
+
+    except Exception as e:
+        pytest.skip(f"Failed to setup CockroachDB database: {e}")
+
+    yield COCKROACHDB_DATABASE
+
+    # Cleanup: drop test database
+    try:
+        conn = psycopg2.connect(
+            host=COCKROACHDB_HOST,
+            port=COCKROACHDB_PORT,
+            database="defaultdb",
+            user=COCKROACHDB_USER,
+            password=COCKROACHDB_PASSWORD or None,
+            connect_timeout=10,
+        )
+        conn.autocommit = True
+        cursor = conn.cursor()
+        cursor.execute(f"DROP DATABASE IF EXISTS {COCKROACHDB_DATABASE}")
+        conn.close()
+    except Exception:
+        pass
+
+
+@pytest.fixture(scope="function")
+def cockroachdb_connection(cockroachdb_db: str) -> str:
+    """Create a sqlit CLI connection for CockroachDB and clean up after test."""
+    connection_name = f"test_cockroachdb_{os.getpid()}"
+
+    # Clean up any existing connection with this name
+    cleanup_connection(connection_name)
+
+    # Create the connection
+    args = [
+        "connection", "create",
+        "--name", connection_name,
+        "--db-type", "cockroachdb",
+        "--server", COCKROACHDB_HOST,
+        "--port", str(COCKROACHDB_PORT),
+        "--database", cockroachdb_db,
+        "--username", COCKROACHDB_USER,
+    ]
+    # Only add password if it's set
+    if COCKROACHDB_PASSWORD:
+        args.extend(["--password", COCKROACHDB_PASSWORD])
+    else:
+        args.extend(["--password", ""])
+
+    run_cli(*args)
+
+    yield connection_name
+
+    # Cleanup
+    cleanup_connection(connection_name)
+
+
+# =============================================================================
 # Utility Fixtures
 # =============================================================================
 

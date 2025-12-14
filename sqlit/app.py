@@ -11,7 +11,7 @@ try:
 except ImportError:
     PYODBC_AVAILABLE = False
 
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import DataTable, Static, TextArea, Tree
@@ -24,7 +24,12 @@ from .config import (
     save_connections,
     save_settings,
 )
-from .screens import ConfirmScreen, ConnectionScreen
+from .screens import (
+    ConfirmScreen,
+    ConnectionScreen,
+    HelpScreen,
+    ValueViewScreen,
+)
 from .widgets import AutocompleteDropdown, ContextFooter, KeyBinding, VimMode
 
 
@@ -36,6 +41,52 @@ class SSMSTUI(App):
     CSS = """
     Screen {
         background: $surface;
+    }
+
+    DataTable.flash-cell:focus > .datatable--cursor,
+    DataTable.flash-row:focus > .datatable--cursor,
+    DataTable.flash-all:focus > .datatable--cursor {
+        background: $success;
+        color: $background;
+        text-style: bold;
+    }
+
+    DataTable.flash-all {
+        border: solid $success;
+    }
+
+    Screen.results-fullscreen #sidebar {
+        display: none;
+    }
+
+    Screen.results-fullscreen #query-area {
+        display: none;
+    }
+
+    Screen.results-fullscreen #results-area {
+        height: 1fr;
+    }
+
+    Screen.query-fullscreen #sidebar {
+        display: none;
+    }
+
+    Screen.query-fullscreen #results-area {
+        display: none;
+    }
+
+    Screen.query-fullscreen #query-area {
+        height: 1fr;
+        border-bottom: none;
+    }
+
+    Screen.explorer-fullscreen #main-panel {
+        display: none;
+    }
+
+    Screen.explorer-fullscreen #sidebar {
+        width: 1fr;
+        border-right: none;
     }
 
     #main-container {
@@ -114,11 +165,12 @@ class SSMSTUI(App):
     BINDINGS = [
         Binding("n", "new_connection", "New", show=False),
         Binding("s", "select_table", "Select", show=False),
-        Binding("f", "refresh_tree", "Refresh", show=False),
+        Binding("R", "refresh_tree", "Refresh", show=False),
         Binding("e", "edit_connection", "Edit", show=False),
         Binding("d", "delete_connection", "Delete", show=False),
         Binding("delete", "delete_connection", "Delete", show=False),
         Binding("x", "disconnect", "Disconnect", show=False),
+        Binding("ctrl+p", "command_palette", "Commands", show=False),
         Binding("ctrl+q", "quit", "Quit", show=False),
         Binding("question_mark", "show_help", "Help", show=False),
         Binding("e", "focus_explorer", "Explorer", show=False),
@@ -127,9 +179,16 @@ class SSMSTUI(App):
         Binding("i", "enter_insert_mode", "Insert", show=False),
         Binding("escape", "exit_insert_mode", "Normal", show=False),
         Binding("enter", "execute_query", "Execute", show=False),
+        Binding("f5", "execute_query_insert", "Execute", show=False),
         Binding("d", "clear_query", "Clear", show=False),
         Binding("n", "new_query", "New", show=False),
         Binding("h", "show_history", "History", show=False),
+        Binding("z", "collapse_tree", "Collapse", show=False),
+        Binding("f", "toggle_fullscreen", "Fullscreen", show=False),
+        Binding("v", "view_cell", "View cell", show=False),
+        Binding("y", "copy_cell", "Copy cell", show=False),
+        Binding("Y", "copy_row", "Copy row", show=False),
+        Binding("a", "copy_results", "Copy results", show=False),
     ]
 
     def __init__(self):
@@ -151,6 +210,172 @@ class SSMSTUI(App):
         self._autocomplete_index: int = 0
         self._autocomplete_filter: str = ""
         self._autocomplete_just_applied: bool = False
+        self._last_result_columns: list[str] = []
+        self._last_result_rows: list[tuple] = []
+        self._last_result_row_count: int = 0
+        self._internal_clipboard: str = ""
+        self._fullscreen_mode: str = "none"
+        self._connection_health: dict[str, bool] = {}
+
+    def _set_fullscreen_mode(self, mode: str) -> None:
+        """Set fullscreen mode: none|explorer|query|results."""
+        self._fullscreen_mode = mode
+        self.screen.remove_class("results-fullscreen")
+        self.screen.remove_class("query-fullscreen")
+        self.screen.remove_class("explorer-fullscreen")
+        if mode == "results":
+            self.screen.add_class("results-fullscreen")
+        elif mode == "query":
+            self.screen.add_class("query-fullscreen")
+        elif mode == "explorer":
+            self.screen.add_class("explorer-fullscreen")
+
+    def _set_connection_health(self, name: str, ok: bool | None) -> None:
+        """Record a connection health status to affect tree coloring."""
+        if ok is None:
+            self._connection_health.pop(name, None)
+            return
+        self._connection_health[name] = ok
+
+    def _apply_connection_health(self, name: str, ok: bool | None) -> None:
+        """Apply connection health update and refresh tree."""
+        self._set_connection_health(name, ok)
+        try:
+            self.refresh_tree()
+        except Exception:
+            pass
+
+    def action_test_connections(self) -> None:
+        """Test all configured connections and mark failures in the tree."""
+        self.notify("Testing connections…")
+        self._test_connection_health()
+
+    def _test_connection_health(self) -> None:
+        """Test all configured connections in the background and mark failures."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        connections = list(self.connections)
+
+        def test_one(config: ConnectionConfig) -> tuple[str, bool | None]:
+            # Avoid auth flows that require user interaction.
+            if (
+                getattr(config, "db_type", "") == "mssql"
+                and getattr(config, "auth_type", "") == "ad_interactive"
+            ):
+                return config.name, None
+
+            try:
+                adapter = get_adapter(config.db_type)
+                conn = adapter.connect(config)
+                try:
+                    close = getattr(conn, "close", None)
+                    if callable(close):
+                        close()
+                except Exception:
+                    pass
+                return config.name, True
+            except (ModuleNotFoundError, ImportError):
+                return config.name, None
+            except Exception:
+                return config.name, False
+
+        def work() -> None:
+            max_workers = min(32, max(1, len(connections)))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(test_one, c) for c in connections]
+                for future in as_completed(futures):
+                    try:
+                        name, ok = future.result()
+                    except Exception:
+                        continue
+                    self.call_from_thread(self._apply_connection_health, name, ok)
+
+        self.run_worker(
+            work,
+            group="connection-health",
+            name="connection-health",
+            description="Testing connections",
+            thread=True,
+            exclusive=True,
+        )
+
+    def _db_type_badge(self, db_type: str) -> str:
+        badge_map = {
+            "mssql": "MSSQL",
+            "postgresql": "PG",
+            "mysql": "MySQL",
+            "mariadb": "MariaDB",
+            "sqlite": "SQLite",
+            "oracle": "Oracle",
+            "duckdb": "DuckDB",
+            "cockroachdb": "CRDB",
+        }
+        return badge_map.get(db_type, db_type.upper() if db_type else "DB")
+
+    def _copy_text(self, text: str) -> bool:
+        """Copy text to clipboard if possible, otherwise store internally."""
+        self._internal_clipboard = text
+
+        # Prefer Textual's clipboard support (OSC52 where available).
+        try:
+            self.copy_to_clipboard(text)
+            return True
+        except Exception:
+            pass
+
+        # Fallback to system clipboard via pyperclip (requires platform support).
+        try:
+            import pyperclip  # type: ignore
+
+            pyperclip.copy(text)
+            return True
+        except Exception:
+            return False
+
+    def _flash_table_yank(self, table: DataTable, scope: str) -> None:
+        """Briefly flash the yanked cell(s) to confirm a copy action."""
+        previous_cursor_type = getattr(table, "cursor_type", "cell")
+        css_class = "flash-cell"
+        target_cursor_type = "cell"
+
+        if scope == "row":
+            css_class = "flash-row"
+            target_cursor_type = "row"
+        elif scope == "all":
+            css_class = "flash-all"
+            target_cursor_type = previous_cursor_type
+
+        try:
+            table.cursor_type = target_cursor_type
+        except Exception:
+            pass
+
+        table.add_class(css_class)
+
+        def _clear() -> None:
+            try:
+                table.remove_class(css_class)
+                try:
+                    table.cursor_type = previous_cursor_type
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        table.set_timer(0.15, _clear)
+
+    def _format_tsv(self, columns: list[str], rows: list[tuple]) -> str:
+        def fmt(value: object) -> str:
+            if value is None:
+                return "NULL"
+            return str(value).replace("\t", " ").replace("\r", "").replace("\n", "\\n")
+
+        lines: list[str] = []
+        if columns:
+            lines.append("\t".join(columns))
+        for row in rows:
+            lines.append("\t".join(fmt(v) for v in row))
+        return "\n".join(lines)
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         """Only allow actions when their context is active."""
@@ -178,20 +403,33 @@ class SSMSTUI(App):
             return in_insert_mode
 
         if in_insert_mode:
-            if action in ("quit", "exit_insert_mode", "command_palette"):
+            if action in (
+                "quit",
+                "exit_insert_mode",
+                "command_palette",
+                "execute_query_insert",
+            ):
                 return True
             return False
 
         if action == "new_connection":
-            return tree_focused and (is_root or node_type is None)
+            return tree_focused
         elif action == "refresh_tree":
+            return tree_focused
+        elif action == "collapse_tree":
             return tree_focused
         elif action == "edit_connection":
             return tree_focused and node_type == "connection"
         elif action == "delete_connection":
             return tree_focused and node_type == "connection"
         elif action == "connect_selected":
-            return tree_focused and node_type == "connection" and not self.current_connection
+            if not tree_focused or node_type != "connection":
+                return False
+            # Allow connecting if not connected, or if selecting a different server
+            config = node.data[1] if node and node.data else None
+            if not self.current_connection:
+                return True
+            return config and self.current_config and config.name != self.current_config.name
         elif action == "disconnect":
             return (
                 tree_focused
@@ -204,6 +442,8 @@ class SSMSTUI(App):
             return (
                 query_focused or results_focused
             ) and self.current_connection is not None
+        elif action == "execute_query_insert":
+            return query_focused and self.current_connection is not None
         elif action in ("clear_query", "new_query"):
             return query_focused and self.vim_mode == VimMode.NORMAL
         elif action == "show_history":
@@ -214,6 +454,12 @@ class SSMSTUI(App):
             return True
         elif action in ("focus_query", "focus_results"):
             return True
+        elif action == "toggle_fullscreen":
+            return True
+        elif action == "test_connections":
+            return True
+        elif action in ("view_cell", "copy_cell", "copy_row", "copy_results"):
+            return results_focused and self.current_connection is not None
         elif action in (
             "quit",
             "show_help",
@@ -229,16 +475,17 @@ class SSMSTUI(App):
             with Horizontal(id="content"):
                 with Vertical(id="sidebar"):
                     yield Static(
-                        r"\[E] Object Explorer", classes="section-label", id="label-explorer"
+                        r"\[e] Object Explorer", classes="section-label", id="label-explorer"
                     )
                     tree = Tree("Servers", id="object-tree")
+                    tree.show_root = False
                     tree.guide_depth = 2
                     yield tree
 
                 with Vertical(id="main-panel"):
                     with Container(id="query-area"):
                         yield Static(
-                            r"\[Q] Query", classes="section-label", id="label-query"
+                            r"\[q] Query", classes="section-label", id="label-query"
                         )
                         yield TextArea(
                             "",
@@ -250,7 +497,7 @@ class SSMSTUI(App):
 
                     with Container(id="results-area"):
                         yield Static(
-                            r"\[R] Results", classes="section-label", id="label-results"
+                            r"\[r] Results", classes="section-label", id="label-results"
                         )
                         yield DataTable(id="results-table")
 
@@ -419,10 +666,14 @@ class SSMSTUI(App):
 
     def action_focus_explorer(self) -> None:
         """Focus the Object Explorer pane."""
+        if self._fullscreen_mode != "none":
+            self._set_fullscreen_mode("none")
         self.query_one("#object-tree", Tree).focus()
 
     def action_focus_query(self) -> None:
         """Focus the Query pane (in NORMAL mode)."""
+        if self._fullscreen_mode != "none":
+            self._set_fullscreen_mode("none")
         self.vim_mode = VimMode.NORMAL
         query_input = self.query_one("#query-input", TextArea)
         query_input.read_only = True
@@ -431,6 +682,8 @@ class SSMSTUI(App):
 
     def action_focus_results(self) -> None:
         """Focus the Results pane."""
+        if self._fullscreen_mode != "none":
+            self._set_fullscreen_mode("none")
         self.query_one("#results-table", DataTable).focus()
 
     def action_enter_insert_mode(self) -> None:
@@ -655,14 +908,16 @@ class SSMSTUI(App):
         status = self.query_one("#status-bar", Static)
         conn_info = "Not connected"
         if self.current_config:
-            conn_info = (
-                f"Connected to {self.current_config.server} - {self.current_config.database}"
-            )
+            display_info = self.current_config.get_display_info()
+            conn_info = f"[#90EE90]Connected to {self.current_config.name}[/] ({display_info})"
 
         try:
             query_input = self.query_one("#query-input", TextArea)
             if query_input.has_focus:
-                mode_str = f"[bold cyan]-- {self.vim_mode.value} --[/]"
+                if self.vim_mode == VimMode.NORMAL:
+                    mode_str = f"[bold orange1]-- {self.vim_mode.value} --[/]"
+                else:
+                    mode_str = f"[dim]-- {self.vim_mode.value} --[/]"
                 status.update(f"{mode_str}  {conn_info}")
             else:
                 status.update(conn_info)
@@ -677,8 +932,15 @@ class SSMSTUI(App):
 
         for conn in self.connections:
             display_info = conn.get_display_info()
-            db_type_label = "SQL" if conn.db_type == "mssql" else "SQLite"
-            node = tree.root.add(f"[dim]{conn.name}[/dim] [{db_type_label}] ({display_info})")
+            db_type_label = self._db_type_badge(conn.db_type)
+            health = self._connection_health.get(conn.name)
+            if health is False:
+                name_markup = f"[dim #ff6b6b]{conn.name}[/]"
+            else:
+                name_markup = f"[dim]{conn.name}[/dim]"
+            node = tree.root.add(
+                f"{name_markup} [{db_type_label}] ({display_info})"
+            )
             node.data = ("connection", conn)
             node.allow_expand = True
 
@@ -695,8 +957,14 @@ class SSMSTUI(App):
 
         def get_conn_label(config, connected=False):
             display_info = config.get_display_info()
-            db_type_label = "SQL" if config.db_type == "mssql" else "SQLite"
-            name = f"[green]{config.name}[/green]" if connected else config.name
+            db_type_label = self._db_type_badge(config.db_type)
+            health = self._connection_health.get(config.name)
+            if connected:
+                name = f"[green]{config.name}[/green]"
+            elif health is False:
+                name = f"[#ff6b6b]{config.name}[/]"
+            else:
+                name = config.name
             return f"{name} [{db_type_label}] ({display_info})"
 
         active_node = None
@@ -838,7 +1106,7 @@ class SSMSTUI(App):
                 table_name = data[2]
                 columns = adapter.get_columns(self.current_connection, table_name, db_name)
                 for col in columns:
-                    child = node.add(f"[dim]{col.name}[/] [italic dim]{col.data_type}[/]")
+                    child = node.add_leaf(f"[dim]{col.name}[/] [italic dim]{col.data_type}[/]")
                     child.data = ("column", db_name, table_name, col.name)
                 return
 
@@ -847,7 +1115,7 @@ class SSMSTUI(App):
                 view_name = data[2]
                 columns = adapter.get_columns(self.current_connection, view_name, db_name)
                 for col in columns:
-                    child = node.add(f"[dim]{col.name}[/] [italic dim]{col.data_type}[/]")
+                    child = node.add_leaf(f"[dim]{col.name}[/] [italic dim]{col.data_type}[/]")
                     child.data = ("column", db_name, view_name, col.name)
                 return
 
@@ -889,8 +1157,15 @@ class SSMSTUI(App):
 
         data = node.data
 
-        if data[0] == "connection" and not self.current_connection:
-            self.connect_to_server(data[1])
+        if data[0] == "connection":
+            config = data[1]
+            # If already connected to this one, do nothing
+            if self.current_config and self.current_config.name == config.name:
+                return
+            # If connected to another, disconnect first
+            if self.current_connection:
+                self._disconnect_silent()
+            self.connect_to_server(config)
 
     def action_new_connection(self) -> None:
         """Show new connection dialog."""
@@ -962,16 +1237,19 @@ class SSMSTUI(App):
             self.current_connection = adapter.connect(config)
             self.current_config = config
             self.current_adapter = adapter
+            self._set_connection_health(config.name, True)
 
             status = self.query_one("#status-bar", Static)
             display_info = config.get_display_info()
-            status.update(f"Connected to {display_info}")
+            status.update(f"[#90EE90]Connected to {config.name}[/] ({display_info})")
 
             self.refresh_tree()
             self._load_schema_cache()
             self.notify(f"Connected to {config.name}")
 
         except Exception as e:
+            self._set_connection_health(config.name, False)
+            self.refresh_tree()
             self.notify(f"Connection failed: {e}", severity="error")
 
     def _load_schema_cache(self) -> None:
@@ -1046,8 +1324,8 @@ class SSMSTUI(App):
         except Exception as e:
             self.notify(f"Error loading schema: {e}", severity="warning")
 
-    def action_disconnect(self) -> None:
-        """Disconnect from current database."""
+    def _disconnect_silent(self) -> None:
+        """Disconnect from current database without notification."""
         if self.current_connection:
             try:
                 self.current_connection.close()
@@ -1057,6 +1335,11 @@ class SSMSTUI(App):
             self.current_config = None
             self.current_adapter = None
 
+    def action_disconnect(self) -> None:
+        """Disconnect from current database."""
+        if self.current_connection:
+            self._disconnect_silent()
+
             status = self.query_one("#status-bar", Static)
             status.update("Disconnected")
 
@@ -1065,6 +1348,13 @@ class SSMSTUI(App):
 
     def action_execute_query(self) -> None:
         """Execute the current query."""
+        self._execute_query_common(keep_insert_mode=False)
+
+    def action_execute_query_insert(self) -> None:
+        """Execute query in INSERT mode without leaving it."""
+        self._execute_query_common(keep_insert_mode=True)
+
+    def _execute_query_common(self, keep_insert_mode: bool) -> None:
         if not self.current_connection or not self.current_adapter:
             self.notify("Not connected to a database", severity="warning")
             return
@@ -1080,36 +1370,155 @@ class SSMSTUI(App):
         results_table.clear(columns=True)
 
         try:
-            # Detect query type to avoid double execution
             query_type = query.strip().upper().split()[0] if query.strip() else ""
-            is_select_query = query_type in ("SELECT", "WITH", "SHOW", "DESCRIBE", "EXPLAIN", "PRAGMA")
+            is_select_query = query_type in (
+                "SELECT",
+                "WITH",
+                "SHOW",
+                "DESCRIBE",
+                "EXPLAIN",
+                "PRAGMA",
+            )
 
             if is_select_query:
-                columns, rows = self.current_adapter.execute_query(self.current_connection, query)
+                columns, rows = self.current_adapter.execute_query(
+                    self.current_connection, query
+                )
                 row_count = len(rows)
 
+                self._last_result_columns = columns
+                self._last_result_rows = list(rows)
+                self._last_result_row_count = row_count
+
                 results_table.add_columns(*columns)
-                for row in rows[:1000]:  # Limit to 1000 rows displayed
+                for row in rows[:1000]:
                     str_row = tuple(str(v) if v is not None else "NULL" for v in row)
                     results_table.add_row(*str_row)
 
                 self.notify(f"Query returned {row_count} rows")
             else:
-                # Non-query statement (INSERT, UPDATE, DELETE, CREATE, DROP, etc.)
-                affected = self.current_adapter.execute_non_query(self.current_connection, query)
+                affected = self.current_adapter.execute_non_query(
+                    self.current_connection, query
+                )
+                self._last_result_columns = ["Result"]
+                self._last_result_rows = [(f"{affected} row(s) affected",)]
+                self._last_result_row_count = 1
+
                 results_table.add_column("Result")
                 results_table.add_row(f"{affected} row(s) affected")
                 self.notify(f"Query executed: {affected} row(s) affected")
 
-            # Save to history on successful execution
             if self.current_config:
                 from .config import save_query_to_history
+
                 save_query_to_history(self.current_config.name, query)
 
+            if keep_insert_mode:
+                self.vim_mode = VimMode.INSERT
+                query_input.read_only = False
+                query_input.focus()
+                self._update_footer_bindings()
+                self._update_status_bar()
+
         except Exception as e:
+            self._last_result_columns = ["Error"]
+            self._last_result_rows = [(str(e),)]
+            self._last_result_row_count = 1
+
             results_table.add_column("Error")
             results_table.add_row(str(e))
             self.notify(f"Query error: {e}", severity="error")
+
+    def action_toggle_fullscreen(self) -> None:
+        """Toggle fullscreen for the currently focused pane."""
+        try:
+            tree = self.query_one("#object-tree", Tree)
+            query_input = self.query_one("#query-input", TextArea)
+            results_table = self.query_one("#results-table", DataTable)
+        except Exception:
+            return
+
+        if tree.has_focus:
+            target = "explorer"
+        elif query_input.has_focus:
+            target = "query"
+        elif results_table.has_focus:
+            target = "results"
+        else:
+            target = "none"
+
+        if target != "none" and self._fullscreen_mode == target:
+            self._set_fullscreen_mode("none")
+        else:
+            self._set_fullscreen_mode(target)
+
+        if self._fullscreen_mode == "explorer":
+            tree.focus()
+        elif self._fullscreen_mode == "query":
+            query_input.focus()
+        elif self._fullscreen_mode == "results":
+            results_table.focus()
+
+        self._update_section_labels()
+        self._update_footer_bindings()
+
+    def action_view_cell(self) -> None:
+        """View the full value of the selected cell."""
+        table = self.query_one("#results-table", DataTable)
+        if table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+        try:
+            value = table.get_cell_at(table.cursor_coordinate)
+        except Exception:
+            return
+        self.push_screen(
+            ValueViewScreen(
+                str(value) if value is not None else "NULL", title="Cell Value"
+            )
+        )
+
+    def action_copy_cell(self) -> None:
+        """Copy the selected cell to clipboard (or internal clipboard)."""
+        table = self.query_one("#results-table", DataTable)
+        if table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+        try:
+            value = table.get_cell_at(table.cursor_coordinate)
+        except Exception:
+            return
+        self._copy_text(str(value) if value is not None else "NULL")
+        self._flash_table_yank(table, "cell")
+
+    def action_copy_row(self) -> None:
+        """Copy the selected row to clipboard (TSV)."""
+        table = self.query_one("#results-table", DataTable)
+        if table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+        try:
+            row_values = table.get_row_at(table.cursor_row)
+        except Exception:
+            return
+
+        text = self._format_tsv([], [tuple(row_values)])
+        self._copy_text(text)
+        self._flash_table_yank(table, "row")
+
+    def action_copy_results(self) -> None:
+        """Copy the entire results (last query) to clipboard (TSV)."""
+        if not self._last_result_columns and not self._last_result_rows:
+            self.notify("No results", severity="warning")
+            return
+
+        text = self._format_tsv(self._last_result_columns, self._last_result_rows)
+        self._copy_text(text)
+        try:
+            table = self.query_one("#results-table", DataTable)
+            self._flash_table_yank(table, "all")
+        except Exception:
+            pass
 
     def action_clear_query(self) -> None:
         """Clear the query input."""
@@ -1215,13 +1624,46 @@ class SSMSTUI(App):
             return
 
         data = node.data
-        if data[0] == "connection" and not self.current_connection:
-            self.connect_to_server(data[1])
+        if data[0] == "connection":
+            config = data[1]
+            # If already connected to this one, do nothing
+            if self.current_config and self.current_config.name == config.name:
+                return
+            # If connected to another, disconnect first
+            if self.current_connection:
+                self._disconnect_silent()
+            self.connect_to_server(config)
 
     def action_refresh_tree(self) -> None:
         """Refresh the object explorer."""
         self.refresh_tree()
         self.notify("Refreshed")
+
+    def get_system_commands(self, screen):
+        yield from super().get_system_commands(screen)
+        yield SystemCommand(
+            "Refresh Object Explorer",
+            "Reload the object explorer tree",
+            self.action_refresh_tree,
+        )
+        yield SystemCommand(
+            "Test connections",
+            "Attempt to connect to all saved connections",
+            self.action_test_connections,
+        )
+
+    def action_collapse_tree(self) -> None:
+        """Collapse all nodes in the object explorer."""
+        tree = self.query_one("#object-tree", Tree)
+
+        def collapse_all(node):
+            for child in node.children:
+                collapse_all(child)
+                child.collapse()
+
+        collapse_all(tree.root)
+        self._expanded_paths.clear()
+        self._save_expanded_state()
 
     def action_select_table(self) -> None:
         """Generate and execute SELECT query for selected table/view."""
@@ -1270,26 +1712,37 @@ class SSMSTUI(App):
 
             if is_root or node_type is None:
                 left_bindings.append(KeyBinding("n", "New Connection", "new_connection"))
-                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
+                left_bindings.append(KeyBinding("R", "Refresh", "refresh_tree"))
+                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
 
             elif node_type == "connection":
-                if not self.current_connection:
-                    left_bindings.append(KeyBinding("enter", "Connect", "connect_selected"))
-                else:
+                config = node.data[1] if node and node.data else None
+                is_current = self.current_config and config and config.name == self.current_config.name
+                if is_current and self.current_connection:
                     left_bindings.append(KeyBinding("x", "Disconnect", "disconnect"))
+                else:
+                    left_bindings.append(KeyBinding("enter", "Connect", "connect_selected"))
+                left_bindings.append(KeyBinding("n", "New", "new_connection"))
                 left_bindings.append(KeyBinding("e", "Edit", "edit_connection"))
                 left_bindings.append(KeyBinding("d", "Delete", "delete_connection"))
-                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
+                left_bindings.append(KeyBinding("R", "Refresh", "refresh_tree"))
+                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
 
             elif node_type in ("table", "view"):
                 left_bindings.append(KeyBinding("enter", "Columns", "toggle_node"))
                 left_bindings.append(KeyBinding("s", "Select TOP 100", "select_table"))
+                left_bindings.append(KeyBinding("R", "Refresh", "refresh_tree"))
+                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
 
             elif node_type == "database":
                 left_bindings.append(KeyBinding("enter", "Expand", "toggle_node"))
+                left_bindings.append(KeyBinding("R", "Refresh", "refresh_tree"))
+                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
 
             elif node_type == "folder":
                 left_bindings.append(KeyBinding("enter", "Expand", "toggle_node"))
+                left_bindings.append(KeyBinding("R", "Refresh", "refresh_tree"))
+                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
 
         elif query_input.has_focus:
             if self.vim_mode == VimMode.NORMAL:
@@ -1299,12 +1752,21 @@ class SSMSTUI(App):
                     left_bindings.append(KeyBinding("h", "History", "show_history"))
                 left_bindings.append(KeyBinding("d", "Clear", "clear_query"))
                 left_bindings.append(KeyBinding("n", "New", "new_query"))
+                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
             else:
                 left_bindings.append(KeyBinding("esc", "Normal Mode", "exit_insert_mode"))
+                if self.current_connection:
+                    left_bindings.append(KeyBinding("f5", "Execute", "execute_query_insert"))
+                left_bindings.append(KeyBinding("tab", "Autocomplete", "autocomplete_accept"))
 
         elif results_table.has_focus:
             if self.current_connection:
                 left_bindings.append(KeyBinding("enter", "Re-run", "execute_query"))
+                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
+                left_bindings.append(KeyBinding("v", "View cell", "view_cell"))
+                left_bindings.append(KeyBinding("y", "Copy cell", "copy_cell"))
+                left_bindings.append(KeyBinding("Y", "Copy row", "copy_row"))
+                left_bindings.append(KeyBinding("a", "Copy all", "copy_results"))
 
         right_bindings: list[KeyBinding] = []
         if self.vim_mode != VimMode.INSERT:
@@ -1326,31 +1788,44 @@ class SSMSTUI(App):
 [bold]Object Explorer:[/]
   enter    Connect/Expand/Columns
   s        Select TOP 100 (table/view)
-  ^e       Edit connection
-  d        Delete connection
   n        New connection
-  f        Refresh
+  e        Edit connection
+  d        Delete connection
+  R        Refresh
+  f        Fullscreen explorer
+  z        Collapse all
   x        Disconnect
 
 [bold]Query Editor (Vim Mode):[/]
   i        Enter INSERT mode
   esc      Exit to NORMAL mode
   enter    Execute query (NORMAL)
+  f5       Execute query (stay INSERT)
   h        Query history
   d        Clear query
   n        New query (clear all)
+  tab      Accept autocomplete (INSERT)
+  f        Fullscreen query
 
 [bold]Panes (NORMAL mode):[/]
   e        Object Explorer
   q        Query
   r        Results
 
+[bold]Results:[/]
+  f        Fullscreen results
+  v        View selected cell
+  y        Copy selected cell
+  Y        Copy selected row
+  a        Copy all results
+
 [bold]General:[/]
   ?        Show this help
   ^p       Command palette
   ^q       Quit
+  (Cmd)    Test connections (Ctrl+P)
 """
-        self.notify(help_text, title="Keyboard Shortcuts", timeout=10)
+        self.push_screen(HelpScreen(help_text))
 
     def on_descendant_focus(self, event) -> None:
         """Handle focus changes to update section labels and footer."""

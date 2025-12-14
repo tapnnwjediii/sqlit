@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from enum import Enum
 
+from textual.app import ComposeResult
+from textual.containers import Horizontal
 from textual.widgets import Static
 
 
@@ -23,7 +25,7 @@ class KeyBinding:
         self.action = action
 
 
-class ContextFooter(Static):
+class ContextFooter(Horizontal):
     """A context-aware footer that shows relevant keybindings."""
 
     DEFAULT_CSS = """
@@ -34,12 +36,27 @@ class ContextFooter(Static):
         color: $primary;
         padding: 0 1;
     }
+
+    #footer-left {
+        width: 1fr;
+        height: 1;
+    }
+
+    #footer-right {
+        width: auto;
+        height: 1;
+        text-align: right;
+    }
     """
 
     def __init__(self):
-        super().__init__("")
+        super().__init__()
         self._left_bindings: list[KeyBinding] = []
         self._right_bindings: list[KeyBinding] = []
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id="footer-left")
+        yield Static("", id="footer-right")
 
     def set_bindings(self, left: list[KeyBinding], right: list[KeyBinding]) -> None:
         """Update the displayed bindings."""
@@ -49,11 +66,14 @@ class ContextFooter(Static):
 
     def _rebuild(self) -> None:
         """Rebuild the footer content with left and right sections."""
-        all_bindings = self._left_bindings + self._right_bindings
-        parts = []
-        for binding in all_bindings:
-            parts.append(f"{binding.label}: [bold]{binding.key}[/]")
-        self.update(" | ".join(parts))
+        left = "  ".join(
+            f"{binding.label}: [bold]{binding.key}[/]" for binding in self._left_bindings
+        )
+        right = "  ".join(
+            f"{binding.label}: [bold]{binding.key}[/]" for binding in self._right_bindings
+        )
+        self.query_one("#footer-left", Static).update(left)
+        self.query_one("#footer-right", Static).update(right)
 
 
 class AutocompleteDropdown(Static):

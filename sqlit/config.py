@@ -15,6 +15,10 @@ class DatabaseType(Enum):
     SQLITE = "sqlite"
     POSTGRESQL = "postgresql"
     MYSQL = "mysql"
+    ORACLE = "oracle"
+    MARIADB = "mariadb"
+    DUCKDB = "duckdb"
+    COCKROACHDB = "cockroachdb"
 
 
 DATABASE_TYPE_LABELS = {
@@ -22,6 +26,10 @@ DATABASE_TYPE_LABELS = {
     DatabaseType.SQLITE: "SQLite",
     DatabaseType.POSTGRESQL: "PostgreSQL",
     DatabaseType.MYSQL: "MySQL",
+    DatabaseType.ORACLE: "Oracle",
+    DatabaseType.MARIADB: "MariaDB",
+    DatabaseType.DUCKDB: "DuckDB",
+    DatabaseType.COCKROACHDB: "CockroachDB",
 }
 
 
@@ -126,12 +134,11 @@ class ConnectionConfig:
 
     def get_display_info(self) -> str:
         """Get a display string for the connection."""
-        if self.db_type == "sqlite":
-            return self.name
-        else:
-            # Server-based databases (mssql, postgresql, mysql)
-            db_part = f"@{self.database}" if self.database else ""
-            return f"{self.name}{db_part}"
+        if self.db_type in ("sqlite", "duckdb"):
+            return self.file_path or self.name
+
+        db_part = f"@{self.database}" if self.database else ""
+        return f"{self.name}{db_part}"
 
 
 CONFIG_DIR = Path.home() / ".sqlit"

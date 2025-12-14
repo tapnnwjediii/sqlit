@@ -27,14 +27,16 @@ def cmd_connection_list(args) -> int:
     print("-" * 95)
     for conn in connections:
         db_type_label = DATABASE_TYPE_LABELS.get(conn.get_db_type(), conn.db_type)
-        if conn.db_type == "sqlite":
+        # File-based databases (SQLite, DuckDB)
+        if conn.db_type in ("sqlite", "duckdb"):
             conn_info = conn.file_path[:38] + ".." if len(conn.file_path) > 40 else conn.file_path
             auth_label = "N/A"
-        elif conn.db_type in ("postgresql", "mysql"):
+        # Server-based databases with simple auth
+        elif conn.db_type in ("postgresql", "mysql", "mariadb", "oracle", "cockroachdb"):
             conn_info = f"{conn.server}@{conn.database}" if conn.database else conn.server
             conn_info = conn_info[:38] + ".." if len(conn_info) > 40 else conn_info
             auth_label = f"User: {conn.username}" if conn.username else "N/A"
-        else:  # mssql
+        else:  # mssql (SQL Server)
             conn_info = f"{conn.server}@{conn.database}" if conn.database else conn.server
             conn_info = conn_info[:38] + ".." if len(conn_info) > 40 else conn_info
             auth_label = AUTH_TYPE_LABELS.get(conn.get_auth_type(), conn.auth_type)
@@ -61,11 +63,11 @@ def cmd_connection_create(args) -> int:
         print(f"Error: Invalid database type '{db_type}'. Valid types: {valid_types}")
         return 1
 
-    if db_type == "sqlite":
-        # SQLite connection
+    # File-based databases (SQLite, DuckDB)
+    if db_type in ("sqlite", "duckdb"):
         file_path = getattr(args, "file_path", None)
         if not file_path:
-            print("Error: --file-path is required for SQLite connections.")
+            print(f"Error: --file-path is required for {db_type.upper()} connections.")
             return 1
 
         config = ConnectionConfig(
@@ -73,24 +75,31 @@ def cmd_connection_create(args) -> int:
             db_type=db_type,
             file_path=file_path,
         )
-    elif db_type in ("postgresql", "mysql"):
-        # PostgreSQL or MySQL connection
+    # Server-based databases with simple auth (PostgreSQL, MySQL, MariaDB, Oracle, CockroachDB)
+    elif db_type in ("postgresql", "mysql", "mariadb", "oracle", "cockroachdb"):
         if not args.server:
-            print(f"Error: --server is required for {db_type.upper()} connections.")
+            db_label = DATABASE_TYPE_LABELS.get(DatabaseType(db_type), db_type.upper())
+            print(f"Error: --server is required for {db_label} connections.")
             return 1
 
-        default_port = "5432" if db_type == "postgresql" else "3306"
+        default_ports = {
+            "postgresql": "5432",
+            "mysql": "3306",
+            "mariadb": "3306",
+            "oracle": "1521",
+            "cockroachdb": "26257",
+        }
         config = ConnectionConfig(
             name=args.name,
             db_type=db_type,
             server=args.server,
-            port=args.port or default_port,
+            port=args.port or default_ports.get(db_type, "1433"),
             database=args.database or "",
             username=args.username or "",
             password=args.password or "",
         )
     else:
-        # SQL Server connection
+        # SQL Server connection (mssql)
         if not args.server:
             print("Error: --server is required for SQL Server connections.")
             return 1

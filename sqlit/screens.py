@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Input, OptionList, Static
+from textual.widgets import DataTable, Input, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 
+from .adapters import get_adapter
 from .config import (
     AUTH_TYPE_LABELS,
     AuthType,
@@ -16,6 +17,7 @@ from .config import (
     DATABASE_TYPE_LABELS,
     DatabaseType,
 )
+from .fields import FieldDefinition, FieldGroup, FieldType
 
 
 class ConfirmScreen(ModalScreen):
@@ -94,6 +96,69 @@ class ConfirmScreen(ModalScreen):
         self.dismiss(False)
 
 
+class HelpScreen(ModalScreen):
+    """Modal screen showing keyboard shortcuts and navigation tips."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+        Binding("q", "dismiss", "Close"),
+    ]
+
+    CSS = """
+    HelpScreen {
+        align: center middle;
+        background: transparent;
+    }
+
+    #help-dialog {
+        width: 90;
+        height: 90%;
+        border: solid $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #help-title {
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #help-body {
+        height: 1fr;
+        border: solid $primary-darken-2;
+        background: $surface;
+        padding: 0 1;
+    }
+
+    #help-text {
+        height: auto;
+        background: $surface;
+    }
+
+    #help-footer {
+        height: 1;
+        margin-top: 1;
+        text-align: center;
+        color: $text-muted;
+    }
+    """
+
+    def __init__(self, help_text: str):
+        super().__init__()
+        self.help_text = help_text
+
+    def compose(self) -> ComposeResult:
+        with Container(id="help-dialog"):
+            yield Static("Keyboard Shortcuts", id="help-title")
+            with VerticalScroll(id="help-body"):
+                yield Static(self.help_text, id="help-text")
+            yield Static(r"[bold]\[Esc][/] Close", id="help-footer")
+
+    def action_dismiss(self) -> None:
+        self.dismiss(None)
+
+
 class ConnectionScreen(ModalScreen):
     """Modal screen for adding/editing a connection."""
 
@@ -151,101 +216,58 @@ class ConnectionScreen(ModalScreen):
         padding: 0 1;
     }
 
-    #server-fields {
+    .field-group {
         height: auto;
     }
 
-    #server-fields.hidden {
+    .field-group.hidden {
         display: none;
     }
 
-    #mssql-auth-fields {
+    .field-container {
         height: auto;
     }
 
-    #mssql-auth-fields.hidden {
+    .field-container.hidden {
         display: none;
     }
 
-    #sqlite-fields {
-        height: auto;
-    }
-
-    #sqlite-fields.hidden {
-        display: none;
-    }
-
-    #server-port-row {
+    .field-row {
         height: auto;
         width: 100%;
     }
 
-    #server-field {
+    .field-flex {
         width: 1fr;
         height: auto;
     }
 
-    #port-field {
-        width: 12;
+    .field-fixed {
         height: auto;
         margin-left: 1;
     }
 
-    #server-field .field-label,
-    #port-field .field-label {
-        margin-top: 1;
-    }
-
-    #driver-list {
+    .select-field {
         height: auto;
-        max-height: 4;
+        max-height: 6;
         background: $surface;
         border: solid $primary-darken-2;
         padding: 0;
         margin-bottom: 0;
     }
 
-    #driver-list > .option-list--option {
+    .select-field > .option-list--option {
         padding: 0 1;
-    }
-
-    #auth-list {
-        height: auto;
-        max-height: 7;
-        background: $surface;
-        border: solid $primary-darken-2;
-        padding: 0;
-        margin-bottom: 0;
-    }
-
-    #auth-list > .option-list--option {
-        padding: 0 1;
-    }
-
-    #username-field {
-        height: auto;
-    }
-
-    #username-field.hidden {
-        display: none;
-    }
-
-    #password-field {
-        height: auto;
-    }
-
-    #password-field.hidden {
-        display: none;
     }
     """
-
-    AUTH_NEEDS_USERNAME = {AuthType.SQL_SERVER, AuthType.AD_PASSWORD, AuthType.AD_INTERACTIVE}
-    AUTH_NEEDS_PASSWORD = {AuthType.SQL_SERVER, AuthType.AD_PASSWORD}
 
     def __init__(self, config: ConnectionConfig | None = None, editing: bool = False):
         super().__init__()
         self.config = config
         self.editing = editing
+        self._field_widgets: dict[str, Input | OptionList] = {}
+        self._field_definitions: dict[str, FieldDefinition] = {}
+        self._current_db_type: DatabaseType = self._get_initial_db_type()
 
     def _get_initial_db_type(self) -> DatabaseType:
         """Get the initial database type from config."""
@@ -253,27 +275,107 @@ class ConnectionScreen(ModalScreen):
             return self.config.get_db_type()
         return DatabaseType.MSSQL
 
-    def _get_initial_auth_type(self) -> AuthType:
-        """Get the initial auth type from config."""
-        if self.config:
-            return self.config.get_auth_type()
-        return AuthType.SQL_SERVER
+    def _get_adapter_for_type(self, db_type: DatabaseType):
+        """Get the adapter instance for a database type."""
+        return get_adapter(db_type.value)
+
+    def _get_field_value(self, field_name: str) -> str:
+        """Get the current value of a field from config or default."""
+        if self.config and hasattr(self.config, field_name):
+            return getattr(self.config, field_name) or ""
+        return ""
+
+    def _get_current_form_values(self) -> dict:
+        """Get all current form values as a dictionary."""
+        values = {}
+        for name, widget in self._field_widgets.items():
+            if isinstance(widget, Input):
+                values[name] = widget.value
+            elif isinstance(widget, OptionList):
+                field_def = self._field_definitions.get(name)
+                if field_def and field_def.options and widget.highlighted is not None:
+                    idx = widget.highlighted
+                    if idx < len(field_def.options):
+                        values[name] = field_def.options[idx].value
+                    else:
+                        values[name] = field_def.default
+                else:
+                    values[name] = field_def.default if field_def else ""
+        return values
+
+    def _create_field_widget(self, field_def: FieldDefinition, group_name: str) -> ComposeResult:
+        """Create widgets for a field definition."""
+        field_id = f"field-{field_def.name}"
+        container_id = f"container-{field_def.name}"
+
+        # Determine initial visibility
+        initial_visible = True
+        if field_def.visible_when:
+            # Use config values for initial visibility check
+            initial_values = {}
+            if self.config:
+                for attr in ["auth_type", "driver", "server", "port", "database", "username", "password", "file_path"]:
+                    if hasattr(self.config, attr):
+                        initial_values[attr] = getattr(self.config, attr) or ""
+            initial_visible = field_def.visible_when(initial_values)
+
+        hidden_class = "" if initial_visible else " hidden"
+
+        if field_def.field_type == FieldType.SELECT:
+            with Container(id=container_id, classes=f"field-container{hidden_class}"):
+                yield Static(field_def.label, classes="field-label")
+                options = [Option(opt.label, id=opt.value) for opt in field_def.options]
+                option_list = OptionList(*options, id=field_id, classes="select-field")
+                self._field_widgets[field_def.name] = option_list
+                self._field_definitions[field_def.name] = field_def
+                yield option_list
+        else:
+            # TEXT, PASSWORD, FILE all use Input
+            value = self._get_field_value(field_def.name) or field_def.default
+            with Container(id=container_id, classes=f"field-container{hidden_class}"):
+                yield Static(field_def.label, classes="field-label")
+                input_widget = Input(
+                    value=value,
+                    placeholder=field_def.placeholder,
+                    id=field_id,
+                    password=field_def.field_type == FieldType.PASSWORD,
+                )
+                self._field_widgets[field_def.name] = input_widget
+                self._field_definitions[field_def.name] = field_def
+                yield input_widget
+
+    def _create_field_group(self, group: FieldGroup) -> ComposeResult:
+        """Create widgets for a field group."""
+        # Group fields by row_group
+        row_groups: dict[str | None, list[FieldDefinition]] = {}
+        for field_def in group.fields:
+            row_key = field_def.row_group
+            if row_key not in row_groups:
+                row_groups[row_key] = []
+            row_groups[row_key].append(field_def)
+
+        with Container(classes="field-group"):
+            for row_key, fields in row_groups.items():
+                if row_key is None:
+                    # Single field, not in a row
+                    for field_def in fields:
+                        yield from self._create_field_widget(field_def, group.name)
+                else:
+                    # Multiple fields in a horizontal row
+                    with Horizontal(classes="field-row"):
+                        for field_def in fields:
+                            width_class = "field-flex" if field_def.width == "flex" else "field-fixed"
+                            with Container(classes=width_class):
+                                yield from self._create_field_widget(field_def, group.name)
 
     def compose(self) -> ComposeResult:
         title = "Edit Connection" if self.editing else "New Connection"
         db_type = self._get_initial_db_type()
-        auth_type = self._get_initial_auth_type()
-        show_username = auth_type in self.AUTH_NEEDS_USERNAME
-        show_password = auth_type in self.AUTH_NEEDS_PASSWORD
-        is_mssql = db_type == DatabaseType.MSSQL
-        is_sqlite = db_type == DatabaseType.SQLITE
-        is_postgresql = db_type == DatabaseType.POSTGRESQL
-        is_mysql = db_type == DatabaseType.MYSQL
-        is_server_based = db_type in (DatabaseType.MSSQL, DatabaseType.POSTGRESQL, DatabaseType.MYSQL)
 
         with Container(id="connection-dialog"):
             yield Static(title, id="connection-title")
 
+            # Name field (always present)
             yield Static("Name", classes="field-label")
             yield Input(
                 value=self.config.name if self.config else "",
@@ -281,109 +383,20 @@ class ConnectionScreen(ModalScreen):
                 id="conn-name",
             )
 
+            # Database type selector (always present)
             yield Static("Database Type", classes="field-label")
+            db_types = list(DatabaseType)
             dbtype_list = OptionList(
-                Option(DATABASE_TYPE_LABELS[DatabaseType.MSSQL], id=DatabaseType.MSSQL.value),
-                Option(DATABASE_TYPE_LABELS[DatabaseType.POSTGRESQL], id=DatabaseType.POSTGRESQL.value),
-                Option(DATABASE_TYPE_LABELS[DatabaseType.MYSQL], id=DatabaseType.MYSQL.value),
-                Option(DATABASE_TYPE_LABELS[DatabaseType.SQLITE], id=DatabaseType.SQLITE.value),
+                *[Option(DATABASE_TYPE_LABELS[dt], id=dt.value) for dt in db_types],
                 id="dbtype-list",
             )
             yield dbtype_list
 
-            # Server-based database fields (SQL Server, PostgreSQL, MySQL)
-            with Container(id="server-fields", classes="" if is_server_based else "hidden"):
-                # Get default port based on database type
-                default_port = "1433"
-                if is_postgresql:
-                    default_port = "5432"
-                elif is_mysql:
-                    default_port = "3306"
-
-                with Horizontal(id="server-port-row"):
-                    with Container(id="server-field"):
-                        yield Static("Server", classes="field-label")
-                        yield Input(
-                            value=self.config.server if self.config else "",
-                            placeholder="localhost or server\\instance" if is_mssql else "localhost",
-                            id="conn-server",
-                        )
-                    with Container(id="port-field"):
-                        yield Static("Port", classes="field-label")
-                        yield Input(
-                            value=self.config.port if self.config else default_port,
-                            placeholder=default_port,
-                            id="conn-port",
-                        )
-
-                yield Static("Database (empty = browse all)", classes="field-label")
-                yield Input(
-                    value=self.config.database if self.config else "",
-                    placeholder="Leave empty to browse all databases",
-                    id="conn-database",
-                )
-
-            # SQL Server specific auth fields
-            with Container(id="mssql-auth-fields", classes="" if is_mssql else "hidden"):
-                yield Static("Driver", classes="field-label")
-                from .drivers import get_installed_drivers, SUPPORTED_DRIVERS
-                installed = get_installed_drivers()
-                driver_options = []
-                current_driver = self.config.driver if self.config else "ODBC Driver 18 for SQL Server"
-                if installed:
-                    for driver in installed:
-                        driver_options.append(Option(driver, id=driver))
-                else:
-                    # Show supported drivers even if not installed
-                    for driver in SUPPORTED_DRIVERS[:3]:
-                        driver_options.append(Option(f"[dim]{driver}[/]", id=driver))
-                yield OptionList(*driver_options, id="driver-list")
-
-                yield Static("Authentication", classes="field-label")
-                auth_list = OptionList(
-                    Option(AUTH_TYPE_LABELS[AuthType.SQL_SERVER], id=AuthType.SQL_SERVER.value),
-                    Option(AUTH_TYPE_LABELS[AuthType.WINDOWS], id=AuthType.WINDOWS.value),
-                    Option(AUTH_TYPE_LABELS[AuthType.AD_PASSWORD], id=AuthType.AD_PASSWORD.value),
-                    Option(
-                        AUTH_TYPE_LABELS[AuthType.AD_INTERACTIVE], id=AuthType.AD_INTERACTIVE.value
-                    ),
-                    Option(
-                        AUTH_TYPE_LABELS[AuthType.AD_INTEGRATED], id=AuthType.AD_INTEGRATED.value
-                    ),
-                    id="auth-list",
-                )
-                yield auth_list
-
-            # Credentials fields - shown for SQL Server (conditional) and always for PostgreSQL/MySQL
-            show_credentials = is_postgresql or is_mysql or (is_mssql and show_username)
-            with Container(
-                id="username-field", classes="" if show_credentials else "hidden"
-            ):
-                yield Static("Username", classes="field-label")
-                yield Input(
-                    value=self.config.username if self.config else "",
-                    placeholder="user@domain.com" if is_mssql else "username",
-                    id="conn-username",
-                )
-
-            show_password_field = is_postgresql or is_mysql or (is_mssql and show_password)
-            with Container(
-                id="password-field", classes="" if show_password_field else "hidden"
-            ):
-                yield Static("Password", classes="field-label")
-                yield Input(
-                    value=self.config.password if self.config else "",
-                    id="conn-password",
-                )
-
-            # SQLite specific fields
-            with Container(id="sqlite-fields", classes="" if is_sqlite else "hidden"):
-                yield Static("Database File", classes="field-label")
-                yield Input(
-                    value=self.config.file_path if self.config else "",
-                    placeholder="/path/to/database.db",
-                    id="conn-filepath",
-                )
+            # Dynamic fields container - will be populated based on selected db type
+            with Container(id="dynamic-fields"):
+                adapter = self._get_adapter_for_type(db_type)
+                for group in adapter.get_connection_fields():
+                    yield from self._create_field_group(group)
 
     def on_mount(self) -> None:
         self.query_one("#conn-name", Input).focus()
@@ -391,35 +404,123 @@ class ConnectionScreen(ModalScreen):
         # Set initial database type selection
         dbtype_list = self.query_one("#dbtype-list", OptionList)
         db_type = self._get_initial_db_type()
-        dbtype_options = [DatabaseType.MSSQL, DatabaseType.POSTGRESQL, DatabaseType.MYSQL, DatabaseType.SQLITE]
+        db_types = list(DatabaseType)
         try:
-            dbtype_list.highlighted = dbtype_options.index(db_type)
+            dbtype_list.highlighted = db_types.index(db_type)
         except ValueError:
             dbtype_list.highlighted = 0
 
-        # Set initial driver selection (SQL Server only)
-        driver_list = self.query_one("#driver-list", OptionList)
-        current_driver = self.config.driver if self.config else "ODBC Driver 18 for SQL Server"
-        for i in range(driver_list.option_count):
-            option = driver_list.get_option_at_index(i)
-            if option.id == current_driver:
-                driver_list.highlighted = i
-                break
+        # Set initial values for select fields
+        self._set_initial_select_values()
 
-        # Set initial auth type selection (SQL Server only)
-        auth_list = self.query_one("#auth-list", OptionList)
-        auth_type = self._get_initial_auth_type()
-        auth_options = [
-            AuthType.SQL_SERVER,
-            AuthType.WINDOWS,
-            AuthType.AD_PASSWORD,
-            AuthType.AD_INTERACTIVE,
-            AuthType.AD_INTEGRATED,
-        ]
-        try:
-            auth_list.highlighted = auth_options.index(auth_type)
-        except ValueError:
-            auth_list.highlighted = 0
+    def _set_initial_select_values(self) -> None:
+        """Set initial highlighted values for select fields based on config."""
+        for name, widget in self._field_widgets.items():
+            if isinstance(widget, OptionList):
+                field_def = self._field_definitions.get(name)
+                if not field_def:
+                    continue
+
+                # Get the value from config or default
+                value = self._get_field_value(name) or field_def.default
+
+                # Find the index of this value in options
+                for i, opt in enumerate(field_def.options):
+                    if opt.value == value:
+                        widget.highlighted = i
+                        break
+
+    def _rebuild_dynamic_fields(self, db_type: DatabaseType) -> None:
+        """Rebuild the dynamic fields for a new database type."""
+        self._current_db_type = db_type
+        self._field_widgets.clear()
+        self._field_definitions.clear()
+
+        # Remove old dynamic fields
+        dynamic_container = self.query_one("#dynamic-fields", Container)
+        dynamic_container.remove_children()
+
+        # Add new fields for the selected adapter
+        adapter = self._get_adapter_for_type(db_type)
+        for group in adapter.get_connection_fields():
+            # We need to mount the widgets manually
+            for widget in self._create_field_group_widgets(group):
+                dynamic_container.mount(widget)
+
+    def _create_field_group_widgets(self, group: FieldGroup) -> list:
+        """Create widget instances for a field group (for mounting)."""
+        widgets = []
+
+        # Group fields by row_group
+        row_groups: dict[str | None, list[FieldDefinition]] = {}
+        for field_def in group.fields:
+            row_key = field_def.row_group
+            if row_key not in row_groups:
+                row_groups[row_key] = []
+            row_groups[row_key].append(field_def)
+
+        group_container = Container(classes="field-group")
+
+        for row_key, fields in row_groups.items():
+            if row_key is None:
+                # Single fields
+                for field_def in fields:
+                    for w in self._create_field_widget_instances(field_def, group.name):
+                        group_container.compose_add_child(w)
+            else:
+                # Row of fields
+                row = Horizontal(classes="field-row")
+                for field_def in fields:
+                    width_class = "field-flex" if field_def.width == "flex" else "field-fixed"
+                    field_container = Container(classes=width_class)
+                    for w in self._create_field_widget_instances(field_def, group.name):
+                        field_container.compose_add_child(w)
+                    row.compose_add_child(field_container)
+                group_container.compose_add_child(row)
+
+        widgets.append(group_container)
+        return widgets
+
+    def _create_field_widget_instances(self, field_def: FieldDefinition, group_name: str) -> list:
+        """Create widget instances for a field (for mounting)."""
+        widgets = []
+        field_id = f"field-{field_def.name}"
+        container_id = f"container-{field_def.name}"
+
+        # Determine initial visibility
+        initial_visible = True
+        if field_def.visible_when:
+            initial_values = self._get_current_form_values()
+            initial_visible = field_def.visible_when(initial_values)
+
+        hidden_class = "" if initial_visible else " hidden"
+
+        container = Container(id=container_id, classes=f"field-container{hidden_class}")
+
+        if field_def.field_type == FieldType.SELECT:
+            label = Static(field_def.label, classes="field-label")
+            options = [Option(opt.label, id=opt.value) for opt in field_def.options]
+            option_list = OptionList(*options, id=field_id, classes="select-field")
+            self._field_widgets[field_def.name] = option_list
+            self._field_definitions[field_def.name] = field_def
+            container.compose_add_child(label)
+            container.compose_add_child(option_list)
+        else:
+            value = field_def.default
+            label = Static(field_def.label, classes="field-label")
+            input_widget = Input(
+                value=value,
+                placeholder=field_def.placeholder,
+                id=field_id,
+                password=field_def.field_type == FieldType.PASSWORD,
+            )
+            self._field_widgets[field_def.name] = input_widget
+            self._field_definitions[field_def.name] = field_def
+            container.compose_add_child(label)
+            container.compose_add_child(input_widget)
+
+        widgets.append(container)
+        return widgets
 
     def on_option_list_option_highlighted(self, event) -> None:
         if event.option_list.id == "dbtype-list":
@@ -428,122 +529,40 @@ class ConnectionScreen(ModalScreen):
             except ValueError:
                 return
 
-            server_fields = self.query_one("#server-fields")
-            mssql_auth_fields = self.query_one("#mssql-auth-fields")
-            sqlite_fields = self.query_one("#sqlite-fields")
-            username_field = self.query_one("#username-field")
-            password_field = self.query_one("#password-field")
+            if db_type != self._current_db_type:
+                self._rebuild_dynamic_fields(db_type)
+        else:
+            # A select field changed - update visibility of dependent fields
+            self._update_field_visibility()
 
-            is_server_based = db_type in (DatabaseType.MSSQL, DatabaseType.POSTGRESQL, DatabaseType.MYSQL)
-            is_sqlite = db_type == DatabaseType.SQLITE
-            is_mssql = db_type == DatabaseType.MSSQL
+    def _update_field_visibility(self) -> None:
+        """Update visibility of fields based on current form values."""
+        values = self._get_current_form_values()
 
-            # Show/hide server fields
-            if is_server_based:
-                server_fields.remove_class("hidden")
-            else:
-                server_fields.add_class("hidden")
-
-            # Show/hide SQL Server specific auth fields
-            if is_mssql:
-                mssql_auth_fields.remove_class("hidden")
-            else:
-                mssql_auth_fields.add_class("hidden")
-
-            # Show/hide SQLite fields
-            if is_sqlite:
-                sqlite_fields.remove_class("hidden")
-            else:
-                sqlite_fields.add_class("hidden")
-
-            # Show/hide credentials - always for PostgreSQL/MySQL, conditional for SQL Server
-            if db_type in (DatabaseType.POSTGRESQL, DatabaseType.MYSQL):
-                username_field.remove_class("hidden")
-                password_field.remove_class("hidden")
-            elif is_mssql:
-                # For SQL Server, visibility depends on auth type
-                auth_list = self.query_one("#auth-list", OptionList)
-                auth_idx = auth_list.highlighted or 0
-                auth_options = [
-                    AuthType.SQL_SERVER,
-                    AuthType.WINDOWS,
-                    AuthType.AD_PASSWORD,
-                    AuthType.AD_INTERACTIVE,
-                    AuthType.AD_INTEGRATED,
-                ]
-                auth_type = auth_options[auth_idx] if auth_idx < len(auth_options) else AuthType.SQL_SERVER
-                if auth_type in self.AUTH_NEEDS_USERNAME:
-                    username_field.remove_class("hidden")
+        for name, field_def in self._field_definitions.items():
+            if field_def.visible_when:
+                container = self.query_one(f"#container-{name}", Container)
+                should_show = field_def.visible_when(values)
+                if should_show:
+                    container.remove_class("hidden")
                 else:
-                    username_field.add_class("hidden")
-                if auth_type in self.AUTH_NEEDS_PASSWORD:
-                    password_field.remove_class("hidden")
-                else:
-                    password_field.add_class("hidden")
-            else:
-                # SQLite doesn't need credentials
-                username_field.add_class("hidden")
-                password_field.add_class("hidden")
-
-        elif event.option_list.id == "auth-list":
-            try:
-                auth_type = AuthType(event.option.id)
-            except ValueError:
-                return
-
-            username_field = self.query_one("#username-field")
-            password_field = self.query_one("#password-field")
-
-            if auth_type in self.AUTH_NEEDS_USERNAME:
-                username_field.remove_class("hidden")
-            else:
-                username_field.add_class("hidden")
-
-            if auth_type in self.AUTH_NEEDS_PASSWORD:
-                password_field.remove_class("hidden")
-            else:
-                password_field.add_class("hidden")
-
-    def _get_selected_db_type(self) -> DatabaseType:
-        """Get the currently selected database type."""
-        dbtype_list = self.query_one("#dbtype-list", OptionList)
-        dbtype_options = [DatabaseType.MSSQL, DatabaseType.POSTGRESQL, DatabaseType.MYSQL, DatabaseType.SQLITE]
-        idx = dbtype_list.highlighted or 0
-        return dbtype_options[idx] if idx < len(dbtype_options) else DatabaseType.MSSQL
+                    container.add_class("hidden")
 
     def _get_focusable_fields(self) -> list:
         """Get list of focusable fields in order."""
-        db_type = self._get_selected_db_type()
-
         fields = [
             self.query_one("#conn-name", Input),
             self.query_one("#dbtype-list", OptionList),
         ]
 
-        if db_type == DatabaseType.MSSQL:
-            fields.extend([
-                self.query_one("#conn-server", Input),
-                self.query_one("#conn-port", Input),
-                self.query_one("#conn-database", Input),
-                self.query_one("#driver-list", OptionList),
-                self.query_one("#auth-list", OptionList),
-            ])
-            username_field = self.query_one("#username-field")
-            password_field = self.query_one("#password-field")
-            if "hidden" not in username_field.classes:
-                fields.append(self.query_one("#conn-username", Input))
-            if "hidden" not in password_field.classes:
-                fields.append(self.query_one("#conn-password", Input))
-        elif db_type in (DatabaseType.POSTGRESQL, DatabaseType.MYSQL):
-            fields.extend([
-                self.query_one("#conn-server", Input),
-                self.query_one("#conn-port", Input),
-                self.query_one("#conn-database", Input),
-                self.query_one("#conn-username", Input),
-                self.query_one("#conn-password", Input),
-            ])
-        else:  # SQLite
-            fields.append(self.query_one("#conn-filepath", Input))
+        # Add all visible field widgets
+        for name, widget in self._field_widgets.items():
+            try:
+                container = self.query_one(f"#container-{name}", Container)
+                if "hidden" not in container.classes:
+                    fields.append(widget)
+            except Exception:
+                pass
 
         return fields
 
@@ -567,115 +586,61 @@ class ConnectionScreen(ModalScreen):
         elif fields:
             fields[-1].focus()
 
-    def _get_selected_driver(self) -> str:
-        """Get the currently selected driver."""
-        driver_list = self.query_one("#driver-list", OptionList)
-        idx = driver_list.highlighted or 0
-        if idx < driver_list.option_count:
-            return driver_list.get_option_at_index(idx).id
-        return "ODBC Driver 18 for SQL Server"
-
-    def _get_selected_auth_type(self) -> AuthType:
-        """Get the currently selected auth type."""
-        auth_list = self.query_one("#auth-list", OptionList)
-        auth_options = [
-            AuthType.SQL_SERVER,
-            AuthType.WINDOWS,
-            AuthType.AD_PASSWORD,
-            AuthType.AD_INTERACTIVE,
-            AuthType.AD_INTEGRATED,
-        ]
-        idx = auth_list.highlighted or 0
-        return auth_options[idx] if idx < len(auth_options) else AuthType.SQL_SERVER
-
     def _get_config(self) -> ConnectionConfig | None:
+        """Build a ConnectionConfig from the current form values."""
         name = self.query_one("#conn-name", Input).value
-        db_type = self._get_selected_db_type()
 
         if not name:
             self.notify("Name is required", severity="error")
             return None
 
+        # Get selected database type
+        dbtype_list = self.query_one("#dbtype-list", OptionList)
+        db_types = list(DatabaseType)
+        idx = dbtype_list.highlighted or 0
+        db_type = db_types[idx] if idx < len(db_types) else DatabaseType.MSSQL
+
+        # Collect all field values
+        values = self._get_current_form_values()
+
+        # Validate required fields
+        for field_name, field_def in self._field_definitions.items():
+            if field_def.required:
+                # Check if field is visible
+                is_visible = True
+                if field_def.visible_when:
+                    is_visible = field_def.visible_when(values)
+
+                if is_visible and not values.get(field_name):
+                    self.notify(f"{field_def.label} is required", severity="error")
+                    return None
+
+        # Build config based on database type
+        config_kwargs = {
+            "name": name,
+            "db_type": db_type.value,
+        }
+
+        # Add all field values to config
+        for field_name, value in values.items():
+            config_kwargs[field_name] = value
+
+        # Handle SQL Server specific fields
         if db_type == DatabaseType.MSSQL:
-            server = self.query_one("#conn-server", Input).value
-            port = self.query_one("#conn-port", Input).value or "1433"
-            database = self.query_one("#conn-database", Input).value
-            driver = self._get_selected_driver()
-            auth_type = self._get_selected_auth_type()
+            auth_type = values.get("auth_type", "sql")
+            config_kwargs["trusted_connection"] = (auth_type == "windows")
 
-            username = ""
-            password = ""
-
-            if auth_type in self.AUTH_NEEDS_USERNAME:
-                username = self.query_one("#conn-username", Input).value
-            if auth_type in self.AUTH_NEEDS_PASSWORD:
-                password = self.query_one("#conn-password", Input).value
-
-            if not server:
-                self.notify("Server is required", severity="error")
-                return None
-
-            if auth_type in self.AUTH_NEEDS_USERNAME and not username:
-                self.notify(
-                    "Username is required for this authentication type", severity="error"
-                )
-                return None
-
-            return ConnectionConfig(
-                name=name,
-                db_type=db_type.value,
-                server=server,
-                port=port,
-                database=database,
-                username=username,
-                password=password,
-                auth_type=auth_type.value,
-                driver=driver,
-                trusted_connection=(auth_type == AuthType.WINDOWS),
-            )
-        elif db_type in (DatabaseType.POSTGRESQL, DatabaseType.MYSQL):
-            server = self.query_one("#conn-server", Input).value
-            default_port = "5432" if db_type == DatabaseType.POSTGRESQL else "3306"
-            port = self.query_one("#conn-port", Input).value or default_port
-            database = self.query_one("#conn-database", Input).value
-            username = self.query_one("#conn-username", Input).value
-            password = self.query_one("#conn-password", Input).value
-
-            if not server:
-                self.notify("Server is required", severity="error")
-                return None
-
-            if not username:
-                self.notify("Username is required", severity="error")
-                return None
-
-            return ConnectionConfig(
-                name=name,
-                db_type=db_type.value,
-                server=server,
-                port=port,
-                database=database,
-                username=username,
-                password=password,
-            )
-        else:  # SQLite
-            file_path = self.query_one("#conn-filepath", Input).value
-
-            if not file_path:
-                self.notify("Database file path is required", severity="error")
-                return None
-
-            return ConnectionConfig(
-                name=name,
-                db_type=db_type.value,
-                file_path=file_path,
-            )
+        return ConnectionConfig(**config_kwargs)
 
     def _get_package_install_hint(self, db_type: str) -> str | None:
         """Get pip install command for missing database packages."""
         hints = {
             "postgresql": "pip install psycopg2-binary",
             "mysql": "pip install mysql-connector-python",
+            "oracle": "pip install oracledb",
+            "mariadb": "pip install mariadb",
+            "duckdb": "pip install duckdb",
+            "cockroachdb": "pip install psycopg2-binary",
         }
         return hints.get(db_type)
 
@@ -686,11 +651,15 @@ class ConnectionScreen(ModalScreen):
             return
 
         try:
-            from .adapters import get_adapter
-
             adapter = get_adapter(config.db_type)
             conn = adapter.connect(config)
             conn.close()
+            try:
+                set_health = getattr(self.app, "_set_connection_health", None)
+                if callable(set_health):
+                    set_health(config.name, True)
+            except Exception:
+                pass
             self.notify("Connection successful!", severity="information")
         except ModuleNotFoundError as e:
             hint = self._get_package_install_hint(config.db_type)
@@ -705,6 +674,12 @@ class ConnectionScreen(ModalScreen):
             else:
                 self.notify(f"Required module not installed: {e}", severity="error")
         except Exception as e:
+            try:
+                set_health = getattr(self.app, "_set_connection_health", None)
+                if callable(set_health):
+                    set_health(config.name, False)
+            except Exception:
+                pass
             self.notify(f"Connection failed: {e}", severity="error")
 
     def action_save(self) -> None:
@@ -716,71 +691,71 @@ class ConnectionScreen(ModalScreen):
         self.dismiss(None)
 
 
-class QueryResultScreen(ModalScreen):
-    """Modal screen showing query results."""
+class ValueViewScreen(ModalScreen):
+    """Modal screen for viewing a single (potentially long) value."""
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close"),
         Binding("q", "dismiss", "Close"),
+        Binding("y", "copy", "Copy"),
     ]
 
     CSS = """
-    QueryResultScreen {
+    ValueViewScreen {
         align: center middle;
+        background: transparent;
     }
 
-    #result-container {
-        width: 95%;
-        height: 90%;
-        border: thick $accent;
+    #value-dialog {
+        width: 90;
+        height: 70%;
+        border: solid $primary;
         background: $surface;
         padding: 1 2;
     }
 
-    #result-header {
-        height: 3;
-        background: $accent;
-        padding: 0 1;
+    #value-title {
+        text-align: center;
+        text-style: bold;
         margin-bottom: 1;
     }
 
-    #result-table {
+    #value-text {
         height: 1fr;
+        border: solid $primary-darken-2;
     }
 
-    #result-info {
-        height: 3;
-        padding: 1;
+    #value-footer {
+        height: 1;
+        margin-top: 1;
+        text-align: center;
+        color: $text-muted;
     }
     """
 
-    def __init__(self, columns: list[str], rows: list[tuple], row_count: int):
+    def __init__(self, value: str, title: str = "Value"):
         super().__init__()
-        self.columns = columns
-        self.rows = rows
-        self.row_count = row_count
+        self.value = value
+        self.title = title
 
     def compose(self) -> ComposeResult:
-        with Container(id="result-container"):
-            yield Static("Query Results", id="result-header")
-
-            table = DataTable(id="result-table")
-            table.add_columns(*self.columns)
-            yield table
-
-            yield Static(
-                f"Showing {len(self.rows)} of {self.row_count} rows",
-                id="result-info",
-            )
+        with Container(id="value-dialog"):
+            yield Static(self.title, id="value-title")
+            yield TextArea(self.value, id="value-text", read_only=True)
+            yield Static(r"[bold]\[Y][/] Copy  [bold]\[Esc][/] Close", id="value-footer")
 
     def on_mount(self) -> None:
-        table = self.query_one("#result-table", DataTable)
-        for row in self.rows:
-            str_row = tuple(str(v) if v is not None else "NULL" for v in row)
-            table.add_row(*str_row)
+        self.query_one("#value-text", TextArea).focus()
 
     def action_dismiss(self) -> None:
         self.dismiss(None)
+
+    def action_copy(self) -> None:
+        copied = getattr(self.app, "_copy_text", None)
+        if callable(copied):
+            copied(self.value)
+        else:
+            self.notify("Copy unavailable", timeout=2)
 
 
 class DriverSetupScreen(ModalScreen):

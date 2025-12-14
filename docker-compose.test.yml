@@ -50,3 +50,52 @@ services:
       start_period: 30s
     tmpfs:
       - /var/lib/mysql
+
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    container_name: sqlit-test-oracle
+    environment:
+      ORACLE_PASSWORD: "TestPassword123!"
+      APP_USER: "testuser"
+      APP_USER_PASSWORD: "TestPassword123!"
+    ports:
+      - "1521:1521"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  mariadb:
+    image: mariadb:11
+    container_name: sqlit-test-mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: "TestPassword123!"
+      MARIADB_USER: "testuser"
+      MARIADB_PASSWORD: "TestPassword123!"
+      MARIADB_DATABASE: "test_sqlit"
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    tmpfs:
+      - /var/lib/mysql
+
+  cockroachdb:
+    image: cockroachdb/cockroach:latest
+    container_name: sqlit-test-cockroachdb
+    command: start-single-node --insecure
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
