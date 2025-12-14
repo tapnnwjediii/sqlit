@@ -82,7 +82,7 @@ class QueryHistoryScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         title = f"Query History - {self.connection_name}"
-        shortcuts = [("Select", "Enter"), ("Delete", "D"), ("Close", "Esc")]
+        shortcuts = [("Select", "<enter>"), ("Delete", "D"), ("Close", "<esc>")]
 
         with Dialog(id="history-dialog", title=title, shortcuts=shortcuts):
             with VerticalScroll(id="history-scroll"):

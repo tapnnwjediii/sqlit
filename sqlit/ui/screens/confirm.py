@@ -46,7 +46,7 @@ class ConfirmScreen(ModalScreen):
         self.title_text = title
 
     def compose(self) -> ComposeResult:
-        shortcuts = [("Yes", "Y"), ("No", "N"), ("Cancel", "Esc")]
+        shortcuts = [("Yes", "Y"), ("No", "N"), ("Cancel", "<esc>")]
         with Dialog(id="confirm-dialog", title=self.title_text, shortcuts=shortcuts):
             option_list = OptionList(
                 Option("Yes", id="yes"),

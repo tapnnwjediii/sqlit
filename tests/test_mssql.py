@@ -98,10 +98,8 @@ class TestMSSQLIntegration:
         )
         assert result.returncode == 0
 
-        # Parse JSON output (exclude the row count message)
-        lines = result.stdout.strip().split("\n")
-        json_output = "\n".join(lines[:-1])
-        data = json.loads(json_output)
+        # Parse JSON output (row count message goes to stderr, not stdout)
+        data = json.loads(result.stdout)
 
         assert len(data) == 2
         assert data[0]["name"] == "Alice"

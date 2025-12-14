@@ -5,8 +5,9 @@ from .connection import ConnectionScreen
 from .driver_setup import DriverSetupScreen
 from .error import ErrorScreen
 from .help import HelpScreen
-from .notifications import NotificationHistoryScreen
+from .leader_menu import LeaderMenuScreen
 from .query_history import QueryHistoryScreen
+from .theme import ThemeScreen
 from .value_view import ValueViewScreen
 
 __all__ = [
@@ -15,7 +16,8 @@ __all__ = [
     "DriverSetupScreen",
     "ErrorScreen",
     "HelpScreen",
-    "NotificationHistoryScreen",
+    "LeaderMenuScreen",
     "QueryHistoryScreen",
+    "ThemeScreen",
     "ValueViewScreen",
 ]

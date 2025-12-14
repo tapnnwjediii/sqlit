@@ -54,9 +54,10 @@ class ConnectionMixin:
             self.current_config = None
             self.current_adapter = None
             self.current_ssh_tunnel = None
+            self.refresh_tree()
 
-        # Show connecting status
-        self.notify(f"Connecting to {config.name}...")
+        # Reset connection failed state
+        self._connection_failed = False
 
         # Use injected factory or default
         create_session = self._session_factory or ConnectionSession.create
@@ -67,6 +68,7 @@ class ConnectionMixin:
 
         def on_success(session: "ConnectionSession") -> None:
             """Handle successful connection on main thread."""
+            self._connection_failed = False
             self._session = session
             self.current_connection = session.connection
             self.current_config = config
@@ -75,10 +77,15 @@ class ConnectionMixin:
 
             self.refresh_tree()
             self._load_schema_cache()
+            self._update_status_bar()
 
         def on_error(error: Exception) -> None:
             """Handle connection failure on main thread."""
-            self.notify(f"Connection failed: {error}", severity="error")
+            from ..screens import ErrorScreen
+
+            self._connection_failed = True
+            self._update_status_bar()
+            self.push_screen(ErrorScreen("Connection Failed", str(error)))
 
         def do_work() -> None:
             """Worker function with error handling."""

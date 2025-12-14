@@ -23,6 +23,8 @@ class UINavigationMixin:
     _last_notification_time: str
     _notification_timer: Any
     _notification_history: list
+    _leader_timer: Any
+    _leader_pending: bool
 
     def _set_fullscreen_mode(self, mode: str) -> None:
         """Set fullscreen mode: none|explorer|query|results."""
@@ -30,6 +32,7 @@ class UINavigationMixin:
         self.screen.remove_class("results-fullscreen")
         self.screen.remove_class("query-fullscreen")
         self.screen.remove_class("explorer-fullscreen")
+
         if mode == "results":
             self.screen.add_class("results-fullscreen")
         elif mode == "query":
@@ -46,31 +49,49 @@ class UINavigationMixin:
         except Exception:
             return
 
-        label_explorer.remove_class("active")
-        label_query.remove_class("active")
-        label_results.remove_class("active")
-
+        # Find which pane is focused
+        active_pane = None
         focused = self.focused
         if focused:
             widget = focused
             while widget:
                 widget_id = getattr(widget, "id", None)
                 if widget_id == "object-tree" or widget_id == "sidebar":
-                    label_explorer.add_class("active")
+                    active_pane = "explorer"
                     break
                 elif widget_id == "query-input" or widget_id == "query-area":
-                    label_query.add_class("active")
+                    active_pane = "query"
                     break
                 elif widget_id == "results-table" or widget_id == "results-area":
-                    label_results.add_class("active")
+                    active_pane = "results"
                     break
                 widget = getattr(widget, "parent", None)
+
+        # Only update labels if a pane is focused (don't clear when dialogs are open)
+        if active_pane:
+            label_explorer.remove_class("active")
+            label_query.remove_class("active")
+            label_results.remove_class("active")
+            if active_pane == "explorer":
+                label_explorer.add_class("active")
+            elif active_pane == "query":
+                label_query.add_class("active")
+            elif active_pane == "results":
+                label_results.add_class("active")
 
     def action_focus_explorer(self) -> None:
         """Focus the Object Explorer pane."""
         if self._fullscreen_mode != "none":
             self._set_fullscreen_mode("none")
-        self.query_one("#object-tree", Tree).focus()
+        # Unhide explorer if hidden
+        if self.screen.has_class("explorer-hidden"):
+            self.screen.remove_class("explorer-hidden")
+        tree = self.query_one("#object-tree", Tree)
+        tree.focus()
+        # If no node selected or on root, move cursor to first child
+        if tree.cursor_node is None or tree.cursor_node == tree.root:
+            if tree.root.children:
+                tree.cursor_line = 0
 
     def action_focus_query(self) -> None:
         """Focus the Query pane (in NORMAL mode)."""
@@ -119,10 +140,13 @@ class UINavigationMixin:
         from .query import SPINNER_FRAMES
 
         status = self.query_one("#status-bar", Static)
-        conn_info = "Not connected"
-        if self.current_config:
+        if getattr(self, "_connection_failed", False):
+            conn_info = "[#ff6b6b]Connection failed[/]"
+        elif self.current_config:
             display_info = self.current_config.get_display_info()
             conn_info = f"[#90EE90]Connected to {self.current_config.name}[/] ({display_info})"
+        else:
+            conn_info = "Not connected"
 
         # Build status indicators
         status_parts = []
@@ -214,13 +238,12 @@ class UINavigationMixin:
         self._notification_history.append((timestamp, message, severity))
 
         if severity == "error":
-            # Clear any status bar notification and show error as dialog
+            # Clear any status bar notification and show error in results
             self._last_notification = ""
             self._last_notification_severity = "information"
             self._last_notification_time = ""
             self._update_status_bar()
-            from ..screens import ErrorScreen
-            self.push_screen(ErrorScreen(message, timestamp))
+            self._show_error_in_results(message, timestamp)
         else:
             # Show normal/warning in status bar
             self._last_notification = message
@@ -228,19 +251,52 @@ class UINavigationMixin:
             self._last_notification_time = timestamp
             self._update_status_bar()
 
-    def action_show_notifications(self) -> None:
-        """Show the notification history dialog."""
-        from ..screens import NotificationHistoryScreen
+    def _show_error_in_results(self, message: str, timestamp: str) -> None:
+        """Display error message in the results table."""
+        import textwrap
 
-        self.push_screen(NotificationHistoryScreen(self._notification_history))
+        error_text = f"[{timestamp}] {message}" if timestamp else message
 
-    def action_dismiss_notification(self) -> None:
-        """Dismiss the current notification."""
-        if self._last_notification:
-            self._last_notification = ""
-            self._last_notification_severity = "information"
-            self._last_notification_time = ""
-            self._update_status_bar()
+        results_table = self.query_one("#results-table", DataTable)
+        # Wrap to table width (minus some padding), minimum 40 chars
+        wrap_width = max(40, results_table.size.width - 4)
+        wrapped = textwrap.fill(error_text, width=wrap_width)
+
+        self._last_result_columns = ["Error"]
+        self._last_result_rows = [(wrapped,)]
+        self._last_result_row_count = 1
+
+        results_table.clear(columns=True)
+        results_table.add_column("Error")
+        results_table.add_row(wrapped)
+        self._update_footer_bindings()
+
+    def action_toggle_explorer(self) -> None:
+        """Toggle the visibility of the explorer sidebar."""
+        try:
+            tree = self.query_one("#object-tree", Tree)
+            query_input = self.query_one("#query-input", TextArea)
+        except Exception:
+            return
+
+        if self.screen.has_class("explorer-hidden"):
+            self.screen.remove_class("explorer-hidden")
+            tree.focus()
+        else:
+            # If explorer has focus, move focus to query before hiding
+            if tree.has_focus:
+                query_input.focus()
+            self.screen.add_class("explorer-hidden")
+
+    def action_change_theme(self) -> None:
+        """Open the theme selection dialog."""
+        from ..screens import ThemeScreen
+
+        def on_theme_selected(theme: str | None) -> None:
+            if theme:
+                self.theme = theme
+
+        self.push_screen(ThemeScreen(self.theme), on_theme_selected)
 
     def action_toggle_fullscreen(self) -> None:
         """Toggle fullscreen for the currently focused pane."""
@@ -303,8 +359,7 @@ class UINavigationMixin:
 
             if is_root or node_type is None:
                 left_bindings.append(KeyBinding("n", "New Connection", "new_connection"))
-                left_bindings.append(KeyBinding("R", "Refresh", "refresh_tree"))
-                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
+                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
 
             elif node_type == "connection":
                 config = node.data[1] if node and node.data else None
@@ -316,44 +371,42 @@ class UINavigationMixin:
                 left_bindings.append(KeyBinding("n", "New", "new_connection"))
                 left_bindings.append(KeyBinding("e", "Edit", "edit_connection"))
                 left_bindings.append(KeyBinding("d", "Delete", "delete_connection"))
-                left_bindings.append(KeyBinding("R", "Refresh", "refresh_tree"))
-                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
+                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
 
             elif node_type in ("table", "view"):
                 left_bindings.append(KeyBinding("enter", "Columns", "toggle_node"))
                 left_bindings.append(KeyBinding("s", "Select TOP 100", "select_table"))
-                left_bindings.append(KeyBinding("R", "Refresh", "refresh_tree"))
-                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
+                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
 
             elif node_type == "database":
                 left_bindings.append(KeyBinding("enter", "Expand", "toggle_node"))
-                left_bindings.append(KeyBinding("R", "Refresh", "refresh_tree"))
-                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
+                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
 
             elif node_type == "folder":
                 left_bindings.append(KeyBinding("enter", "Expand", "toggle_node"))
-                left_bindings.append(KeyBinding("R", "Refresh", "refresh_tree"))
-                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
+                left_bindings.append(KeyBinding("f", "Refresh", "refresh_tree"))
 
         elif query_input.has_focus:
             if self.vim_mode == VimMode.NORMAL:
                 left_bindings.append(KeyBinding("i", "Insert Mode", "enter_insert_mode"))
+                left_bindings.append(KeyBinding("enter", "Execute", "execute_query"))
                 if self.current_connection:
-                    left_bindings.append(KeyBinding("enter", "Execute", "execute_query"))
                     left_bindings.append(KeyBinding("h", "History", "show_history"))
                 left_bindings.append(KeyBinding("d", "Clear", "clear_query"))
                 left_bindings.append(KeyBinding("n", "New", "new_query"))
-                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
             else:
                 left_bindings.append(KeyBinding("esc", "Normal Mode", "exit_insert_mode"))
-                if self.current_connection:
-                    left_bindings.append(KeyBinding("f5", "Execute", "execute_query_insert"))
+                left_bindings.append(KeyBinding("f5", "Execute", "execute_query_insert"))
                 left_bindings.append(KeyBinding("tab", "Autocomplete", "autocomplete_accept"))
 
         elif results_table.has_focus:
-            if self.current_connection:
+            # Check if showing an error (column named "Error")
+            is_error = self._last_result_columns == ["Error"]
+            if is_error:
+                left_bindings.append(KeyBinding("v", "View error", "view_cell"))
+                left_bindings.append(KeyBinding("y", "Copy error", "copy_cell"))
+            else:
                 left_bindings.append(KeyBinding("enter", "Re-run", "execute_query"))
-                left_bindings.append(KeyBinding("f", "Fullscreen", "toggle_fullscreen"))
                 left_bindings.append(KeyBinding("v", "View cell", "view_cell"))
                 left_bindings.append(KeyBinding("y", "Copy cell", "copy_cell"))
                 left_bindings.append(KeyBinding("Y", "Copy row", "copy_row"))
@@ -364,12 +417,9 @@ class UINavigationMixin:
             right_bindings.extend(
                 [
                     KeyBinding("?", "Help", "show_help"),
-                    KeyBinding("^p", "Commands", "command_palette"),
-                    KeyBinding("^q", "Quit", "quit"),
+                    KeyBinding("<space>", "Commands", "leader_key"),
                 ]
             )
-        else:
-            right_bindings.append(KeyBinding("^q", "Quit", "quit"))
 
         footer.set_bindings(left_bindings, right_bindings)
 
@@ -413,12 +463,78 @@ class UINavigationMixin:
   a        Copy all results
 
 [bold]General:[/]
+  <space>  Commands menu
   ?        Show this help
-  ^p       Command palette
   ^q       Quit
-  (Cmd)    Test connections (Ctrl+P)
 """
         self.push_screen(HelpScreen(help_text))
+
+    def action_leader_key(self) -> None:
+        """Handle leader key (space) press - show command menu after delay."""
+        from ...widgets import VimMode
+
+        # Don't trigger in INSERT mode
+        if self.vim_mode == VimMode.INSERT:
+            return
+
+        # Cancel any existing timer
+        if hasattr(self, "_leader_timer") and self._leader_timer is not None:
+            self._leader_timer.stop()
+
+        self._leader_pending = True
+
+        def show_menu():
+            if getattr(self, "_leader_pending", False):
+                self._leader_pending = False
+                self._show_leader_menu()
+
+        # Show menu after 200ms delay
+        self._leader_timer = self.set_timer(0.2, show_menu)
+
+    def _show_leader_menu(self) -> None:
+        """Display the leader menu."""
+        from ..screens import LeaderMenuScreen
+
+        self.push_screen(LeaderMenuScreen(), self._handle_leader_result)
+
+    def _handle_leader_result(self, result: str | None) -> None:
+        """Handle result from leader menu."""
+        self._update_footer_bindings()
+        if result:
+            # Handle quit specially since Textual's action_quit is async
+            if result == "quit":
+                self.exit()
+                return
+            # Run the action
+            action_method = getattr(self, f"action_{result}", None)
+            if action_method:
+                action_method()
+
+    # Leader combo actions (triggered by space + key)
+    def action_leader_toggle_explorer(self) -> None:
+        """Leader combo: toggle explorer."""
+        self.action_toggle_explorer()
+
+    def action_leader_fullscreen(self) -> None:
+        """Leader combo: toggle fullscreen."""
+        self.action_toggle_fullscreen()
+
+    def action_leader_help(self) -> None:
+        """Leader combo: show help."""
+        self.action_show_help()
+
+    def action_leader_theme(self) -> None:
+        """Leader combo: change theme."""
+        self.action_change_theme()
+
+    def action_leader_quit(self) -> None:
+        """Leader combo: quit app."""
+        self.exit()
+
+    def action_leader_disconnect(self) -> None:
+        """Leader combo: disconnect."""
+        if self.current_connection:
+            self.action_disconnect()
 
     def on_descendant_focus(self, event) -> None:
         """Handle focus changes to update section labels and footer."""

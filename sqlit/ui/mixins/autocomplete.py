@@ -282,6 +282,7 @@ class AutocompleteMixin:
         """Handle key events for autocomplete navigation."""
         from ...widgets import AutocompleteDropdown, VimMode
 
+        # Handle autocomplete navigation
         if not self._autocomplete_visible:
             return
 

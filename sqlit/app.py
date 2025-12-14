@@ -11,7 +11,7 @@ try:
 except ImportError:
     PYODBC_AVAILABLE = False
 
-from textual.app import App, ComposeResult, SystemCommand
+from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import DataTable, Static, TextArea, Tree
@@ -98,6 +98,10 @@ class SSMSTUI(
         border-right: none;
     }
 
+    Screen.explorer-hidden #sidebar {
+        display: none;
+    }
+
     #main-container {
         width: 100%;
         height: 100%;
@@ -172,14 +176,23 @@ class SSMSTUI(
     LAYERS = ["autocomplete"]
 
     BINDINGS = [
+        # Leader combo bindings (checked first when _leader_pending is True)
+        Binding("e", "leader_toggle_explorer", show=False),
+        Binding("f", "leader_fullscreen", show=False),
+        Binding("h", "leader_help", show=False),
+        Binding("t", "leader_theme", show=False),
+        Binding("q", "leader_quit", show=False),
+        Binding("x", "leader_disconnect", show=False),
+        # Regular bindings
         Binding("n", "new_connection", "New", show=False),
         Binding("s", "select_table", "Select", show=False),
         Binding("R", "refresh_tree", "Refresh", show=False),
+        Binding("f", "refresh_tree", "Refresh", show=False),
         Binding("e", "edit_connection", "Edit", show=False),
         Binding("d", "delete_connection", "Delete", show=False),
         Binding("delete", "delete_connection", "Delete", show=False),
         Binding("x", "disconnect", "Disconnect", show=False),
-        Binding("ctrl+p", "command_palette", "Commands", show=False),
+        Binding("space", "leader_key", "Commands", show=False, priority=True),
         Binding("ctrl+q", "quit", "Quit", show=False),
         Binding("question_mark", "show_help", "Help", show=False),
         Binding("e", "focus_explorer", "Explorer", show=False),
@@ -193,14 +206,11 @@ class SSMSTUI(
         Binding("n", "new_query", "New", show=False),
         Binding("h", "show_history", "History", show=False),
         Binding("z", "collapse_tree", "Collapse", show=False),
-        Binding("f", "toggle_fullscreen", "Fullscreen", show=False),
         Binding("v", "view_cell", "View cell", show=False),
         Binding("y", "copy_cell", "Copy cell", show=False),
         Binding("Y", "copy_row", "Copy row", show=False),
         Binding("a", "copy_results", "Copy results", show=False),
         Binding("ctrl+c", "cancel_operation", "Cancel", show=False),
-        Binding("N", "show_notifications", "Notifications", show=False),
-        Binding("d", "dismiss_notification", "Dismiss", show=False),
     ]
 
     def __init__(self):
@@ -235,6 +245,9 @@ class SSMSTUI(
         self._last_notification_time: str = ""
         self._notification_timer = None
         self._notification_history: list = []
+        self._connection_failed: bool = False
+        self._leader_timer = None
+        self._leader_pending: bool = False
         self._query_worker = None
         self._query_executing: bool = False
         self._cancellable_query: Any | None = None
@@ -281,6 +294,23 @@ class SSMSTUI(
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         """Only allow actions when their context is active."""
+        # Leader combo actions only work when _leader_pending is True
+        if action.startswith("leader_") and action != "leader_key":
+            if getattr(self, "_leader_pending", False):
+                # Cancel timer and clear pending state
+                if hasattr(self, "_leader_timer") and self._leader_timer is not None:
+                    self._leader_timer.stop()
+                    self._leader_timer = None
+                self._leader_pending = False
+                return True
+            return False
+
+        # Block most actions when waiting for leader combo
+        if getattr(self, "_leader_pending", False):
+            # Only allow leader_key action during leader pending
+            if action != "leader_key":
+                return False
+
         try:
             tree = self.query_one("#object-tree", Tree)
             query_input = self.query_one("#query-input", TextArea)
@@ -308,7 +338,6 @@ class SSMSTUI(
             if action in (
                 "quit",
                 "exit_insert_mode",
-                "command_palette",
                 "execute_query_insert",
             ):
                 return True
@@ -340,11 +369,9 @@ class SSMSTUI(
         elif action == "select_table":
             return tree_focused and node_type in ("table", "view")
         elif action == "execute_query":
-            return (
-                query_focused or results_focused
-            ) and self.current_connection is not None
+            return query_focused or results_focused
         elif action == "execute_query_insert":
-            return query_focused and self.current_connection is not None
+            return query_focused
         elif action in ("clear_query", "new_query"):
             return query_focused and self.vim_mode == VimMode.NORMAL
         elif action == "show_history":
@@ -356,15 +383,16 @@ class SSMSTUI(
         elif action in ("focus_query", "focus_results"):
             return True
         elif action == "toggle_fullscreen":
-            return True
+            # Don't allow toggle_fullscreen when tree focused (f is refresh there)
+            return not tree_focused
         elif action == "test_connections":
             return True
         elif action in ("view_cell", "copy_cell", "copy_row", "copy_results"):
-            return results_focused and self.current_connection is not None
+            return results_focused
         elif action in (
             "quit",
             "show_help",
-            "command_palette",
+            "leader_key",
             "toggle_dark",
         ):
             return True
@@ -433,6 +461,9 @@ class SSMSTUI(
 
         tree = self.query_one("#object-tree", Tree)
         tree.focus()
+        # Move cursor to first node if available
+        if tree.root.children:
+            tree.cursor_line = 0
         self._update_section_labels()
 
         # Check for ODBC drivers
@@ -531,15 +562,3 @@ class SSMSTUI(
         settings["theme"] = new_theme
         save_settings(settings)
 
-    def get_system_commands(self, screen):
-        yield from super().get_system_commands(screen)
-        yield SystemCommand(
-            "Refresh Object Explorer",
-            "Reload the object explorer tree",
-            self.action_refresh_tree,
-        )
-        yield SystemCommand(
-            "Test connections",
-            "Attempt to connect to all saved connections",
-            self.action_test_connections,
-        )

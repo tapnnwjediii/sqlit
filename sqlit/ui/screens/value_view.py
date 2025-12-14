@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Static, TextArea
+from textual.widgets import Static
 
 from ...widgets import Dialog
 
@@ -15,6 +16,7 @@ class ValueViewScreen(ModalScreen):
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close"),
+        Binding("enter", "dismiss", "Close"),
         Binding("q", "dismiss", "Close"),
         Binding("y", "copy", "Copy"),
     ]
@@ -30,9 +32,19 @@ class ValueViewScreen(ModalScreen):
         height: 70%;
     }
 
-    #value-text {
+    #value-scroll {
         height: 1fr;
         border: solid $primary-darken-2;
+        padding: 1;
+    }
+
+    #value-text {
+        width: auto;
+        height: auto;
+    }
+
+    #value-text.flash-copy {
+        background: $success;
     }
     """
 
@@ -42,12 +54,13 @@ class ValueViewScreen(ModalScreen):
         self.title = title
 
     def compose(self) -> ComposeResult:
-        shortcuts = [("Copy", "Y"), ("Close", "Esc")]
+        shortcuts = [("Copy", "y"), ("Close", "<enter>")]
         with Dialog(id="value-dialog", title=self.title, shortcuts=shortcuts):
-            yield TextArea(self.value, id="value-text", read_only=True)
+            with VerticalScroll(id="value-scroll"):
+                yield Static(self.value, id="value-text")
 
     def on_mount(self) -> None:
-        self.query_one("#value-text", TextArea).focus()
+        self.query_one("#value-scroll").focus()
 
     def action_dismiss(self) -> None:
         self.dismiss(None)
@@ -56,5 +69,12 @@ class ValueViewScreen(ModalScreen):
         copied = getattr(self.app, "_copy_text", None)
         if callable(copied):
             copied(self.value)
+            self._flash_copy()
         else:
             self.notify("Copy unavailable", timeout=2)
+
+    def _flash_copy(self) -> None:
+        """Flash the text background to indicate copy."""
+        text_area = self.query_one("#value-text")
+        text_area.add_class("flash-copy")
+        self.set_timer(0.15, lambda: text_area.remove_class("flash-copy"))

@@ -67,10 +67,10 @@ class DriverSetupScreen(ModalScreen):
 
         if has_drivers:
             title = "Select ODBC Driver"
-            shortcuts = [("Select", "Enter"), ("Cancel", "Esc")]
+            shortcuts = [("Select", "<enter>"), ("Cancel", "<esc>")]
         else:
             title = "No ODBC Driver Found"
-            shortcuts = [("Select", "Enter"), ("Install", "I"), ("Cancel", "Esc")]
+            shortcuts = [("Select", "<enter>"), ("Install", "I"), ("Cancel", "<esc>")]
 
         with Dialog(id="driver-dialog", title=title, shortcuts=shortcuts):
             if has_drivers:

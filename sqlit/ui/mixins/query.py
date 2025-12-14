@@ -54,7 +54,7 @@ class QueryMixin:
     def _execute_query_common(self, keep_insert_mode: bool) -> None:
         """Common query execution logic."""
         if not self.current_connection or not self.current_adapter:
-            self.notify("Not connected to a database", severity="warning")
+            self.notify("Connect to a server to execute queries", severity="warning")
             return
 
         query_input = self.query_one("#query-input", TextArea)

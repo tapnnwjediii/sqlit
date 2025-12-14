@@ -19,10 +19,11 @@ class VimMode(Enum):
 class KeyBinding:
     """Represents a single key binding for display."""
 
-    def __init__(self, key: str, label: str, action: str):
+    def __init__(self, key: str, label: str, action: str, disabled: bool = False):
         self.key = key
         self.label = label
         self.action = action
+        self.disabled = disabled
 
 
 class ContextFooter(Horizontal):
@@ -66,12 +67,13 @@ class ContextFooter(Horizontal):
 
     def _rebuild(self) -> None:
         """Rebuild the footer content with left and right sections."""
-        left = "  ".join(
-            f"{binding.label}: [bold]{binding.key}[/]" for binding in self._left_bindings
-        )
-        right = "  ".join(
-            f"{binding.label}: [bold]{binding.key}[/]" for binding in self._right_bindings
-        )
+        def format_binding(binding: KeyBinding) -> str:
+            if binding.disabled:
+                return f"[$text-muted strike]{binding.label}: {binding.key}[/]"
+            return f"{binding.label}: [bold]{binding.key}[/]"
+
+        left = "  ".join(format_binding(b) for b in self._left_bindings)
+        right = "  ".join(format_binding(b) for b in self._right_bindings)
         self.query_one("#footer-left", Static).update(left)
         self.query_one("#footer-right", Static).update(right)
 
@@ -117,7 +119,7 @@ class Dialog(Container):
         Args:
             title: The dialog title (shown in border title).
             shortcuts: List of (action, key) tuples for the subtitle.
-                       Example: [("Save", "^S"), ("Cancel", "Esc")]
+                       Example: [("Save", "^S"), ("Cancel", "<esc>")]
         """
         super().__init__(**kwargs)
         if title is not None:

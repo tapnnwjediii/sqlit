@@ -16,6 +16,7 @@ class HelpScreen(ModalScreen):
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close"),
+        Binding("enter", "dismiss", "Close"),
         Binding("q", "dismiss", "Close"),
     ]
 
@@ -43,7 +44,7 @@ class HelpScreen(ModalScreen):
         self.help_text = help_text
 
     def compose(self) -> ComposeResult:
-        with Dialog(id="help-dialog", title="Help", shortcuts=[("Close", "Esc")]):
+        with Dialog(id="help-dialog", title="Help", shortcuts=[("Close", "<enter>")]):
             with VerticalScroll(id="help-scroll"):
                 yield Static(self.help_text)
 
