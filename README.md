@@ -97,10 +97,22 @@ sqlit connection delete "MyConnection"
 | `h` | Query history |
 | `d` | Clear query |
 | `n` | New query (clear all) |
-| `<space>` | Commands menu |
-| `<space>c` | Cancel running operation |
+| `v` / `y` / `Y` / `a` | View cell / Copy cell / Copy row / Copy all |
 | `Ctrl+Q` | Quit |
 | `?` | Help |
+
+### Commands Menu (`<space>`)
+
+| Key | Action |
+|-----|--------|
+| `<space>c` | Connect to database |
+| `<space>x` | Disconnect |
+| `<space>z` | Cancel running query |
+| `<space>e` | Toggle Explorer |
+| `<space>f` | Toggle Maximize |
+| `<space>t` | Change theme |
+| `<space>h` | Help |
+| `<space>q` | Quit |
 
 Autocomplete triggers automatically in INSERT mode. Use `Tab` to accept.
 
