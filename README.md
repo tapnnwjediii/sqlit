@@ -47,7 +47,7 @@ sqlit is a lightweight database TUI that is easy to use and beautiful to look at
 
 ### Method 1: `pipx` (Recommended)
 ```bash
-    pipx install sqlit-tui
+pipx install sqlit-tui
 ```
 
 ### Method 2: `uv`
