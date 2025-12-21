@@ -88,10 +88,16 @@ def import_driver_module(
         return importlib.import_module(module_name)
 
     # Skip find_spec if module is already in sys.modules (allows test mocking)
-    if module_name not in sys.modules and importlib.util.find_spec(module_name) is None:
-        from ...db.exceptions import MissingDriverError
+    # find_spec can raise ModuleNotFoundError for submodules like 'mysql.connector'
+    if module_name not in sys.modules:
+        try:
+            spec = importlib.util.find_spec(module_name)
+        except ModuleNotFoundError:
+            spec = None
+        if spec is None:
+            from ...db.exceptions import MissingDriverError
 
-        raise MissingDriverError(driver_name, extra_name, package_name, module_name=module_name)
+            raise MissingDriverError(driver_name, extra_name, package_name, module_name=module_name)
 
     try:
         return importlib.import_module(module_name)
