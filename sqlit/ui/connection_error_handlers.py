@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, TYPE_CHECKING, Any
 
-from ..protocols import AppProtocol
+from .protocols import AppProtocol
 
 if TYPE_CHECKING:
-    from ...config import ConnectionConfig
+    from ..config import ConnectionConfig
 
 
 class ConnectionErrorHandler(Protocol):
