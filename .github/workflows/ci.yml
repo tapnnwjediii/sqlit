@@ -423,6 +423,8 @@ jobs:
         run: |
           docker run -d --name clickhouse \
             -p 8123:8123 -p 9000:9000 \
+            -e CLICKHOUSE_USER=default \
+            -e CLICKHOUSE_PASSWORD=testpass \
             clickhouse/clickhouse-server:latest
           for i in {1..30}; do
             if curl -sf http://localhost:8123/ping > /dev/null 2>&1; then
@@ -438,7 +440,7 @@ jobs:
           CLICKHOUSE_HOST: localhost
           CLICKHOUSE_PORT: 8123
           CLICKHOUSE_USER: default
-          CLICKHOUSE_PASSWORD: ""
+          CLICKHOUSE_PASSWORD: testpass
           CLICKHOUSE_DATABASE: test_sqlit
         run: |
           pytest tests/test_clickhouse.py -v --timeout=120

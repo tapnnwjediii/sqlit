@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -86,7 +87,8 @@ def import_driver_module(
     if not extra_name or not package_name:
         return importlib.import_module(module_name)
 
-    if importlib.util.find_spec(module_name) is None:
+    # Skip find_spec if module is already in sys.modules (allows test mocking)
+    if module_name not in sys.modules and importlib.util.find_spec(module_name) is None:
         from ...db.exceptions import MissingDriverError
 
         raise MissingDriverError(driver_name, extra_name, package_name, module_name=module_name)
