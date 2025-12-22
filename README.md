@@ -88,11 +88,11 @@ When I switched to Linux, I was suddenly unable to return to the devil I know, a
 
 The popular answer was VS Code's SQL extension. But why should we developers launch a heavy Electron app designed for coding just to execute SQL?
 
-I had recently grown fond of Terminal UI's for their speed and keybinding focus. I looked for SQL TUIs, but the options were sparse. The ones I found lacked the user-friendliness and immediate "pick-up-and-go" nature of tools I loved, like `lazygit`, and I shortly returning to vscode sql extension.
+I had recently grown fond of Terminal UI's for their speed and keybinding focus. I looked for SQL TUIs, but the options were sparse. The ones I found lacked the user-friendliness and immediate "pick-up-and-go" nature of tools I loved, like lazygit, and I shortly returning to vscode sql extension.
 
-Something wasn't right. I asked myself, why is it that running SQL queries can't be enjoyable? So I created `sqlit`.
+Something wasn't right. I asked myself, why is it that running SQL queries can't be enjoyable? So I created sqlit.
 
-`sqlit` is for the developer who just wants to query their database with a user friendly UI without their RAM being eaten alive. It is a lightweight, beautiful, and keyboard-driven TUI designed to make accessing your data enjoyable, fast and easy like it should be-- all from inside your favorite terminal.
+sqlit is for the developer who just wants to query their database with a user friendly UI without their RAM being eaten alive. It is a lightweight, beautiful, and keyboard-driven TUI designed to make accessing your data enjoyable, fast and easy like it should be-- all from inside your favorite terminal.
 
 ---
 
