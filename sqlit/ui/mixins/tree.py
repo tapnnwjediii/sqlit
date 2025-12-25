@@ -173,8 +173,14 @@ class TreeMixin:
                     dbs_node.data = FolderNode(folder_type="databases")
 
                     databases = self._run_db_call(adapter.get_databases, self.current_connection)
+                    default_db = self.current_config.database if self.current_config else None
                     for db_name in databases:
-                        db_node = dbs_node.add(escape_markup(db_name))
+                        # Show default database with star and green text
+                        if default_db and db_name.lower() == default_db.lower():
+                            db_label = f"[#4ADE80]* {escape_markup(db_name)}[/]"
+                        else:
+                            db_label = escape_markup(db_name)
+                        db_node = dbs_node.add(db_label)
                         db_node.data = DatabaseNode(name=db_name)
                         db_node.allow_expand = True
                         self._add_database_object_nodes(db_node, db_name)
@@ -700,3 +706,67 @@ class TreeMixin:
         definition = info.get("definition")
         if definition:
             self.query_input.text = f"/*\n{definition}\n*/"
+
+    def set_default_database(self: AppProtocol, db_name: str) -> None:
+        """Set the default database for the current connection.
+
+        This is the shared function used by both the USE query handler and
+        the explorer 'Use as default' action.
+
+        Args:
+            db_name: The database name to set as default.
+        """
+        from dataclasses import replace
+
+        if not self.current_config:
+            self.notify("Not connected", severity="error")
+            return
+
+        self.current_config = replace(self.current_config, database=db_name)
+        self.notify(f"Switched to database: {db_name}")
+        self._update_status_bar()
+        self._update_database_labels()
+
+    def _update_database_labels(self: AppProtocol) -> None:
+        """Update database node labels to show the default database with a star."""
+        if not self.current_config:
+            return
+
+        default_db = self.current_config.database
+
+        # Find the Databases folder and update labels
+        for conn_node in self.object_tree.root.children:
+            if self._get_node_kind(conn_node) != "connection":
+                continue
+
+            # Check if this is the active connection
+            if not (conn_node.data and conn_node.data.config.name == self.current_config.name):
+                continue
+
+            # Find Databases folder
+            for child in conn_node.children:
+                if self._get_node_kind(child) == "folder" and child.data.folder_type == "databases":
+                    # Update each database node
+                    for db_node in child.children:
+                        if self._get_node_kind(db_node) == "database":
+                            db_name = db_node.data.name
+                            if default_db and db_name.lower() == default_db.lower():
+                                db_node.set_label(f"[#4ADE80]* {escape_markup(db_name)}[/]")
+                            else:
+                                db_node.set_label(escape_markup(db_name))
+                    break
+            break
+
+    def action_use_database(self: AppProtocol) -> None:
+        """Set the selected database as the default for the current connection."""
+        node = self.object_tree.cursor_node
+
+        if not node or self._get_node_kind(node) != "database":
+            return
+
+        if not self.current_connection:
+            self.notify("Not connected", severity="error")
+            return
+
+        db_name = node.data.name
+        self.set_default_database(db_name)

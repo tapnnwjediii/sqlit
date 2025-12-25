@@ -125,7 +125,6 @@ class QueryMixin:
         """Run query asynchronously using a cancellable dedicated connection."""
         import asyncio
         import time
-        from dataclasses import replace
 
         from ...services import CancellableQuery, QueryResult, QueryService
         from ...services.query import parse_use_statement
@@ -141,11 +140,9 @@ class QueryMixin:
         # Handle USE database statements
         db_name = parse_use_statement(query)
         if db_name is not None:
-            self.current_config = replace(config, database=db_name)
             self._stop_query_spinner()
             self._display_non_query_result(0, 0)
-            self.notify(f"Switched to database: {db_name}")
-            self._update_status_bar()
+            self.set_default_database(db_name)  # type: ignore[attr-defined]
             if keep_insert_mode:
                 self._restore_insert_mode()
             return
