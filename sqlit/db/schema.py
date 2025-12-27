@@ -439,7 +439,8 @@ CLICKHOUSE_SCHEMA = ConnectionSchema(
 )
 
 
-def _get_supabase_region_options() -> tuple[SelectOption, ...]:
+def _get_aws_region_options() -> tuple[SelectOption, ...]:
+    """AWS regions shared by Supabase, Athena, and other AWS-based services."""
     regions = (
         "us-east-1",
         "us-east-2",
@@ -470,7 +471,7 @@ SUPABASE_SCHEMA = ConnectionSchema(
             name="supabase_region",
             label="Region",
             field_type=FieldType.DROPDOWN,
-            options=_get_supabase_region_options(),
+            options=_get_aws_region_options(),
             required=True,
             default="us-east-1",
         ),
@@ -553,6 +554,21 @@ SNOWFLAKE_SCHEMA = ConnectionSchema(
 )
 
 
+def _get_athena_auth_options() -> tuple[SelectOption, ...]:
+    return (
+        SelectOption("profile", "AWS Profile"),
+        SelectOption("keys", "Access Keys"),
+    )
+
+
+def _athena_auth_is_profile(v: dict) -> bool:
+    return v.get("athena_auth_method", "profile") == "profile"
+
+
+def _athena_auth_is_keys(v: dict) -> bool:
+    return v.get("athena_auth_method") == "keys"
+
+
 ATHENA_SCHEMA = ConnectionSchema(
     db_type="athena",
     display_name="AWS Athena",
@@ -560,8 +576,43 @@ ATHENA_SCHEMA = ConnectionSchema(
         SchemaField(
             name="athena_region_name",
             label="Region",
+            field_type=FieldType.DROPDOWN,
+            options=_get_aws_region_options(),
             required=True,
             default="us-east-1",
+        ),
+        SchemaField(
+            name="athena_auth_method",
+            label="Authentication",
+            field_type=FieldType.DROPDOWN,
+            options=_get_athena_auth_options(),
+            default="profile",
+        ),
+        SchemaField(
+            name="athena_profile_name",
+            label="Profile Name",
+            placeholder="default",
+            required=True,
+            default="default",
+            description="AWS CLI profile name",
+            visible_when=_athena_auth_is_profile,
+        ),
+        SchemaField(
+            name="username",
+            label="Access Key",
+            placeholder="AWS Access Key ID",
+            required=True,
+            group="credentials",
+            visible_when=_athena_auth_is_keys,
+        ),
+        SchemaField(
+            name="password",
+            label="Secret Key",
+            field_type=FieldType.PASSWORD,
+            placeholder="AWS Secret Access Key",
+            required=True,
+            group="credentials",
+            visible_when=_athena_auth_is_keys,
         ),
         SchemaField(
             name="athena_work_group",
@@ -577,44 +628,9 @@ ATHENA_SCHEMA = ConnectionSchema(
             required=True,
             description="S3 location for query results",
         ),
-        SchemaField(
-            name="athena_auth_method",
-            label="Auth Method",
-            field_type=FieldType.SELECT,
-            options=(
-                SelectOption("profile", "AWS Profile"),
-                SelectOption("keys", "Access Keys"),
-            ),
-            default="profile",
-        ),
-        SchemaField(
-            name="athena_profile_name",
-            label="Profile Name",
-            placeholder="default",
-            required=True,
-            default="default",
-            description="AWS CLI profile name",
-            visible_when=lambda v: v.get("athena_auth_method") == "profile",
-        ),
-        SchemaField(
-            name="username",
-            label="Access Key",
-            placeholder="AWS Access Key ID",
-            required=True,
-            group="credentials",
-            visible_when=lambda v: v.get("athena_auth_method") == "keys",
-        ),
-        SchemaField(
-            name="password",
-            label="Secret Key",
-            field_type=FieldType.PASSWORD,
-            placeholder="AWS Secret Access Key",
-            required=True,
-            group="credentials",
-            visible_when=lambda v: v.get("athena_auth_method") == "keys",
-        ),
     ),
     supports_ssh=False,
+    has_advanced_auth=True,
 )
 
 
